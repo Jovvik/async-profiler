@@ -140,6 +140,7 @@ build/$(API_JAR): $(API_SOURCES)
 
 build/$(CONVERTER_JAR): $(CONVERTER_SOURCES) src/converter/MANIFEST.MF
 	mkdir -p build/converter
+	cp src/converter/resources/* build/converter
 	$(JAVAC) -source 7 -target 7 -d build/converter $(CONVERTER_SOURCES)
 	$(JAR) cfm $@ src/converter/MANIFEST.MF -C build/converter .
 	$(RM) -r build/converter

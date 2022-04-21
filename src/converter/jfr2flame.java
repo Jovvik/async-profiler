@@ -165,7 +165,7 @@ public class jfr2flame {
             result = "unknown";
         } else {
             ClassRef cls = jfr.classes.get(method.cls);
-            byte[] className = jfr.symbols.get(cls.name);
+            byte[] className = cls == null ? null : jfr.symbols.get(cls.name);
             byte[] methodName = jfr.symbols.get(method.name);
 
             if (methodType >= JAVA_FRAME_TYPES || className == null || className.length == 0) {

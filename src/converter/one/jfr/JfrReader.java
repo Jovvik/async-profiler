@@ -214,19 +214,31 @@ public class JfrReader implements Closeable {
         typesByName.clear();
 
         long chunkStart = filePosition + pos;
-        readMeta(chunkStart + metaOffset);
-        readConstantPool(chunkStart + cpOffset);
+        if (!readMeta(chunkStart + metaOffset)) {
+            // TODO what if types and names already cleaned?(
+            incomplete = true;
+            return false;
+        }
+        if (!readConstantPool(chunkStart + cpOffset)) {
+            // TODO what if types and names already cleaned?(
+            incomplete = true;
+            return false;
+        }
         cacheEventTypes();
 
         seek(chunkStart + CHUNK_HEADER_SIZE);
         return true;
     }
 
-    private void readMeta(long metaOffset) throws IOException {
+    private boolean readMeta(long metaOffset) throws IOException {
         seek(metaOffset);
-        ensureBytes(5);
+        if (!ensureBytes(5)) {
+            return false;
+        }
 
-        ensureBytes(getVarint() - buf.position());
+        if (!ensureBytes(getVarint() - buf.position())) {
+            return false;
+        }
         getVarint();
         getVarlong();
         getVarlong();
@@ -237,6 +249,7 @@ public class JfrReader implements Closeable {
             strings[i] = getString();
         }
         readElement(strings);
+        return true;
     }
 
     private Element readElement(String[] strings) {
@@ -273,13 +286,17 @@ public class JfrReader implements Closeable {
         }
     }
 
-    private void readConstantPool(long cpOffset) throws IOException {
+    private boolean readConstantPool(long cpOffset) throws IOException {
         long delta;
         do {
             seek(cpOffset);
-            ensureBytes(5);
+            if (!ensureBytes(5)) {
+                return false;
+            }
 
-            ensureBytes(getVarint() - buf.position());
+            if (!ensureBytes(getVarint() - buf.position())) {
+                return false;
+            }
             getVarint();
             getVarlong();
             getVarlong();
@@ -292,6 +309,7 @@ public class JfrReader implements Closeable {
                 readConstants(types.get(type));
             }
         } while (delta != 0 && (cpOffset += delta) > 0);
+        return true;
     }
 
     private void readConstants(JfrClass type) {

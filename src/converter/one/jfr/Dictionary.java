@@ -60,6 +60,29 @@ public class Dictionary<T> {
     }
 
     @SuppressWarnings("unchecked")
+    public T putIfAbsent(long key, T value) {
+        if (key == 0) {
+            throw new IllegalArgumentException("Zero key not allowed");
+        }
+
+        int mask = keys.length - 1;
+        int i = hashCode(key) & mask;
+        while (keys[i] != 0) {
+            if (keys[i] == key) {
+                return (T) values[i];
+            }
+            i = (i + 1) & mask;
+        }
+        keys[i] = key;
+        values[i] = value;
+
+        if (++size * 2 > keys.length) {
+            resize(keys.length * 2);
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
     public T get(long key) {
         int mask = keys.length - 1;
         int i = hashCode(key) & mask;
@@ -83,6 +106,10 @@ public class Dictionary<T> {
             resize(Integer.highestOneBit(count * 4 - 1));
         }
         return count;
+    }
+
+    public int size() {
+        return size;
     }
 
     private void resize(int newCapacity) {
