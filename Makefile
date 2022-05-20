@@ -1,7 +1,11 @@
-PROFILER_VERSION=2.7
+PROFILER_VERSION=2.8
 
 PACKAGE_NAME=async-profiler-$(PROFILER_VERSION)-$(OS_TAG)-$(ARCH_TAG)
 PACKAGE_DIR=/tmp/$(PACKAGE_NAME)
+RES_DIR=src/res
+COMMON_RES_DIR=$(RES_DIR)/common
+JAVA_RES_DIR=$(RES_DIR)/java
+CPP_RES_DIR=$(RES_DIR)/cpp
 
 LIB_PROFILER=libasyncProfiler.$(SOEXT)
 LIB_PROFILER_SO=libasyncProfiler.so
@@ -11,7 +15,7 @@ CONVERTER_JAR=converter.jar
 
 CFLAGS=-O3
 CXXFLAGS=-O3 -fno-omit-frame-pointer -fvisibility=hidden
-INCLUDES=-I$(JAVA_HOME)/include
+INCLUDES=-I$(JAVA_HOME)/include -I$(COMMON_RES_DIR) -I$(CPP_RES_DIR)
 LIBS=-ldl -lpthread
 MERGE=true
 
@@ -21,7 +25,7 @@ JAVAC_RELEASE_VERSION=7
 
 SOURCES := $(wildcard src/*.cpp)
 HEADERS := $(wildcard src/*.h src/fdtransfer/*.h)
-JAVA_HEADERS := $(patsubst %.java,%.class.h,$(wildcard src/helper/one/profiler/*.java))
+COMPILED_JAVA_CLASSES := $(patsubst %.java,%.class,$(wildcard src/helper/one/profiler/*.java))
 API_SOURCES := $(wildcard src/api/one/profiler/*.java)
 CONVERTER_SOURCES := $(shell find src/converter -name '*.java')
 
@@ -42,6 +46,7 @@ ifeq ($(OS),Darwin)
     CFLAGS += $(FAT_BINARY_FLAGS)
     CXXFLAGS += $(FAT_BINARY_FLAGS)
     PACKAGE_NAME=async-profiler-$(PROFILER_VERSION)-$(OS_TAG)
+    MERGE=false
   endif
 else
   CXXFLAGS += -Wl,-z,defs -Wl,-z,nodelete
@@ -55,6 +60,7 @@ else
   PACKAGE_EXT=tar.gz
   ifeq ($(findstring musl,$(shell ldd /bin/ls)),musl)
     OS_TAG=linux-musl
+    CXXFLAGS += -D__musl__
   else
     OS_TAG=linux
   endif
@@ -84,7 +90,9 @@ else
 endif
 
 ifneq ($(ARCH),ppc64le)
-  CXXFLAGS += -momit-leaf-frame-pointer
+  ifneq ($(ARCH_TAG),arm32)
+    CXXFLAGS += -momit-leaf-frame-pointer
+  endif
 endif
 
 
@@ -118,7 +126,7 @@ $(PACKAGE_DIR): build/$(LIB_PROFILER) build/$(JATTACH) $(FDTRANSFER_BIN) \
 build:
 	mkdir -p build
 
-build/$(LIB_PROFILER_SO): $(SOURCES) $(HEADERS) $(JAVA_HEADERS)
+build/$(LIB_PROFILER_SO): $(SOURCES) $(HEADERS) $(COMPILED_JAVA_CLASSES)
 ifeq ($(MERGE),true)
 	for f in src/*.cpp; do echo '#include "'$$f'"'; done |\
 	$(CXX) $(CXXFLAGS) -DPROFILER_VERSION=\"$(PROFILER_VERSION)\" $(INCLUDES) -fPIC -shared -o $@ -xc++ - $(LIBS)
@@ -140,16 +148,14 @@ build/$(API_JAR): $(API_SOURCES)
 
 build/$(CONVERTER_JAR): $(CONVERTER_SOURCES) src/converter/MANIFEST.MF
 	mkdir -p build/converter
-	cp src/converter/resources/* build/converter
+	cp -r $(COMMON_RES_DIR)/* build/converter
+	#cp -r $(JAVA_RES_DIR)/* build/converter
 	$(JAVAC) -source 7 -target 7 -d build/converter $(CONVERTER_SOURCES)
 	$(JAR) cfm $@ src/converter/MANIFEST.MF -C build/converter .
 	$(RM) -r build/converter
 
-%.class.h: %.class
-	hexdump -v -e '1/1 "%u,"' $^ > $@
-
 %.class: %.java
-	$(JAVAC) -g:none -source $(JAVAC_RELEASE_VERSION) -target $(JAVAC_RELEASE_VERSION) $(*D)/*.java
+	$(JAVAC) -g:none -d $(CPP_RES_DIR) -source $(JAVAC_RELEASE_VERSION) -target $(JAVAC_RELEASE_VERSION) $(*D)/*.java
 
 test: all
 	test/smoke-test.sh

@@ -53,6 +53,7 @@ union CallTraceBuffer {
 
 class FrameName;
 class NMethod;
+class StackContext;
 
 enum State {
     NEW,
@@ -92,14 +93,17 @@ class Profiler {
     int _max_stack_depth;
     int _safe_mode;
     CStack _cstack;
+    bool _add_event_frame;
     bool _add_thread_frame;
     bool _add_sched_frame;
     bool _update_thread_names;
-    volatile bool _thread_events_state;
+    volatile jvmtiEventMode _thread_events_state;
 
     SpinLock _stubs_lock;
     CodeCache _runtime_stubs;
     CodeCacheArray _native_libs;
+    const void* _call_stub_begin;
+    const void* _call_stub_end;
 
     // dlopen() hook support
     void** _dlopen_entry;
@@ -117,15 +121,12 @@ class Profiler {
 
     const char* asgctError(int code);
     u32 getLockIndex(int tid);
-    bool inJavaCode(void* ucontext);
-    bool isAddressInCode(const void* pc);
-    int getNativeTrace(void* ucontext, ASGCT_CallFrame* frames, int event_type, int tid, const void** last_pc);
-    int getJavaTraceAsync(void* ucontext, ASGCT_CallFrame* frames, int max_depth);
+    bool isAddressInCode(uintptr_t addr);
+    int getNativeTrace(void* ucontext, ASGCT_CallFrame* frames, int event_type, int tid, StackContext* java_ctx);
+    int getJavaTraceAsync(void* ucontext, ASGCT_CallFrame* frames, int max_depth, StackContext* java_ctx);
     int getJavaTraceJvmti(jvmtiFrameInfo* jvmti_frames, ASGCT_CallFrame* frames, int start_depth, int max_depth);
     int getJavaTraceInternal(jvmtiFrameInfo* jvmti_frames, ASGCT_CallFrame* frames, int max_depth);
     int convertFrames(jvmtiFrameInfo* jvmti_frames, ASGCT_CallFrame* frames, int num_frames);
-    int makeEventFrame(ASGCT_CallFrame* frames, jint event_type, uintptr_t id);
-    bool fillTopFrame(const void* pc, ASGCT_CallFrame* frame, bool* is_entry_frame);
     void fillFrameTypes(ASGCT_CallFrame* frames, int num_frames, NMethod* nmethod);
     void setThreadInfo(int tid, const char* name, jlong java_thread_id);
     void updateThreadName(jvmtiEnv* jvmti, JNIEnv* jni, jthread thread);
@@ -169,6 +170,8 @@ class Profiler {
         _stubs_lock(),
         _runtime_stubs("[stubs]"),
         _native_libs(),
+        _call_stub_begin(NULL),
+        _call_stub_end(NULL),
         _dlopen_entry(NULL) {
 
         for (int i = 0; i < CONCURRENCY_LEVEL; i++) {

@@ -36,8 +36,7 @@ import java.util.Map;
  */
 public class jfr2flame {
 
-    private static final String[] FRAME_SUFFIX = {"", "_[j]", "_[i]", "", "", "_[k]"};
-    private static final byte JAVA_FRAME_TYPES = 3;
+    private static final String[] FRAME_SUFFIX = {"", "_[j]", "_[i]", "", "", "_[k]", "_[1]"};
 
     private final JfrReader jfr;
     private final Dictionary<String> methodNames = new Dictionary<>();
@@ -168,7 +167,8 @@ public class jfr2flame {
             byte[] className = cls == null ? null : jfr.symbols.get(cls.name);
             byte[] methodName = jfr.symbols.get(method.name);
 
-            if (methodType >= JAVA_FRAME_TYPES || className == null || className.length == 0) {
+            if ((methodType >= FlameGraph.FRAME_NATIVE && methodType <= FlameGraph.FRAME_KERNEL)
+                    || className == null || className.length == 0) {
                 result = new String(methodName, StandardCharsets.UTF_8);
             } else {
                 String classStr = new String(className, StandardCharsets.UTF_8);
