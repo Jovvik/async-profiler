@@ -16,11 +16,9 @@
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.Reader;
@@ -28,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.TreeMap;
 
-public class FlameGraph {
+public class FlameGraph extends ResourceProcessor {
     public static final byte FRAME_INTERPRETED = 0;
     public static final byte FRAME_JIT_COMPILED = 1;
     public static final byte FRAME_INLINED = 2;
@@ -122,8 +120,20 @@ public class FlameGraph {
         tail = printTill(out, tail, "/*height:*/300");
         out.print(Math.min(depth * 16, 32767));
 
+        tail = printTill(out, tail, "/*if heatmap css:*/");
+        tail = skipTill(tail, "/*end if heatmap css*/");
+
+        tail = printTill(out, tail, "/*if heatmap html:*/");
+        tail = skipTill(tail, "/*end if heatmap html*/");
+
         tail = printTill(out, tail, "/*title:*/");
         out.print(title);
+
+        tail = printTill(out, tail, "/*if color scheme:*/");
+        tail = skipTill(tail, "/*end if color scheme*/");
+
+        tail = printTill(out, tail, "/*if flamegraph html:*/");
+        tail = printTill(out, tail, "/*end if flamegraph html*/");
 
         tail = printTill(out, tail, "/*reverse:*/false");
         out.print(reverse);
@@ -131,17 +141,17 @@ public class FlameGraph {
         tail = printTill(out, tail, "/*depth:*/0");
         out.print(depth);
 
+        tail = printTill(out, tail, "/*if flamegraph js:*/");
+        tail = printTill(out, tail, "/*end if flamegraph js*/");
+
+        tail = printTill(out, tail, "/*if heatmap js:*/");
+        tail = skipTill(tail, "/*end if heatmap js*/");
+
         tail = printTill(out, tail, "/*frames:*/");
 
         printFrame(out, "all", root, 0, 0);
 
         out.print(tail);
-    }
-
-    private String printTill(PrintStream out, String data, String till) {
-        int index = data.indexOf(till);
-        out.print(data.substring(0, index));
-        return data.substring(index + till.length());
     }
 
     private void printFrame(PrintStream out, String title, Frame frame, int level, long x) {
@@ -262,23 +272,6 @@ public class FlameGraph {
                 }
             }
             return depth + 1;
-        }
-    }
-
-    private static String getResource(String name) {
-        try (InputStream stream = FlameGraph.class.getResourceAsStream(name)) {
-            if (stream == null) {
-                throw new IOException("No resource found");
-            }
-
-            ByteArrayOutputStream result = new ByteArrayOutputStream();
-            byte[] buffer = new byte[64 * 1024];
-            for (int length; (length = stream.read(buffer)) != -1; ) {
-                result.write(buffer, 0, length);
-            }
-            return result.toString("UTF-8");
-        } catch (IOException e) {
-            throw new IllegalStateException("Can't load resource with name " + name);
         }
     }
 }

@@ -44,4 +44,8 @@ public class ContendedLock extends Event {
     public long value() {
         return duration;
     }
+
+    public int extra() {
+        return classId;
+    }
 }

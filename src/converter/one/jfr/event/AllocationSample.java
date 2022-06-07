@@ -46,4 +46,8 @@ public class AllocationSample extends Event {
     public long value() {
         return tlabSize != 0 ? tlabSize : allocationSize;
     }
+
+    public int extra() {
+        return classId;
+    }
 }

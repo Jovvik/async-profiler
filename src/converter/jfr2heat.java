@@ -21,6 +21,7 @@ import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Converts .jfr output produced by async-profiler to HTML Heatmap.
@@ -33,11 +34,21 @@ public class jfr2heat {
         this.jfr = jfr;
     }
 
-    public void convert(Heatmap heatmap) throws IOException {
+    public void convert(SimpleHeatmap heatmap) throws IOException {
         for (Event event; (event = jfr.readEvent()) != null; ) {
-            heatmap.addSample(event);
+            heatmap.addEvent(event);
         }
+        heatmap.finish(
+                jfr.stackTraces,
+                jfr.methods,
+                jfr.classes,
+                jfr.symbols,
+                TimeUnit.NANOSECONDS.toMillis(jfr.startNanos),
+                jfr.startTicks,
+                jfr.ticksPerSec
+        );
     }
+
     public static void main(String[] args) throws Exception {
 
         String input = null;
@@ -51,19 +62,19 @@ public class jfr2heat {
             }
         }
 
-        Heatmap fg;
+        SimpleHeatmap fg = new SimpleHeatmap("Heatmap, CPU");
         try (JfrReader jfr = new JfrReader(input)) {
-            fg = new Heatmap(jfr);
             new jfr2heat(jfr).convert(fg);
         }
 
         if (output == null) {
             fg.dump(System.out);
         } else {
-            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(output), 32768);
+            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(output), 1024 * 1024);
                  PrintStream out = new PrintStream(bos, false, "UTF-8")) {
                 fg.dump(out);
             }
         }
+
     }
 }

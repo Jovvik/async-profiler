@@ -83,6 +83,7 @@ class FlameGraph {
     void printFrame(std::ostream& out, const std::string& name, const Trie& f, int level, u64 x);
     void printTreeFrame(std::ostream& out, const Trie& f, int level);
     const char* printTill(std::ostream& out, const char* data, const char* till);
+    const char* skipTill(const char* data, const char* till);
     int frameType(std::string& name, const Trie& f);
 
   public:

@@ -44,4 +44,8 @@ public abstract class Event implements Comparable<Event> {
     public long value() {
         return 1;
     }
+
+    public int extra() {
+        return 0;
+    }
 }

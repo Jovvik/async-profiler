@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <style>
+        body {margin: 0; padding: 10px; background-color: #ffffff; overflow-y:scroll}
+        h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
+        header {margin: -24px 0 5px 0; line-height: 24px}
+        button {font: 12px sans-serif; cursor: pointer}
+        p {margin: 5px 0 5px 0}
+        a {color: #0366d6}
+        .selectionPart {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none}
+        .sel {background-color: #dada0040}
+        .act {background-color: #00da0040}
+        .dif {background-color: #00dada40}
+        #hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
+        .top {border-top: 1px solid #000}
+        .left {border-left: 1px solid #000}
+        .bottom {border-bottom: 1px solid #000}
+        .right {border-right: 1px solid #000}
+        #hl span {padding: 0 3px 0 3px}
+        #status {overflow: hidden; white-space: nowrap; }
+        #match {overflow: hidden; white-space: nowrap; display: none; vertical-align: bottom}
+        #reset {cursor: pointer}
+    </style>
+</head>
+<body style='font: 12px Verdana, sans-serif'>
+<div style="display: flex">
+    <div id="heatmap-height-line" style="width: 14px; float: left; writing-mode: vertical-rl; transform: scale(-1); user-select: none; vertical-align: center; text-align: center; cursor: pointer">1 min / 1 sec</div>
+
+    <div id='heatmap-canvas-container' style="overflow-x: scroll; width: 100%; position: relative">
+        <div id='heatmap-canvas-wrapper' style='overflow: hidden; height: 320px; width: 500px'>
+            <canvas id='heatmap-canvas' style='height: 300px; cursor: none'></canvas>
+        </div>
+
+        <div id='middleActive' class='selectionPart top bottom act'><span></span></div>
+        <div id='leftActive' class='selectionPart top left bottom act'><span></span></div>
+        <div id='rightActive' class='selectionPart top right bottom act'><span></span></div>
+        <div id='leftMiddleActive' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleActive' class='selectionPart left'><span></span></div>
+
+        <div id='middleSelection' class='selectionPart top bottom sel'><span></span></div>
+        <div id='leftSelection' class='selectionPart top left bottom sel'><span></span></div>
+        <div id='rightSelection' class='selectionPart top right bottom sel'><span></span></div>
+        <div id='leftMiddleSelection' class='selectionPart right'><span></span></div>
+        <div id='rightMiddleSelection' class='selectionPart left'><span></span></div>
+    </div>
+</div>
+<div id="executionsHeatmap" style="display:none">${executionsHeatmap}</div>
+<div id="globalStacks" style="display:none">${globalStacks}</div>
+<div id="methods" style="display:none">${methods}</div>
+<h1>${title}</h1>
+<header>
+    <div style='text-align: left; display: inline-block'><p id='status'>&nbsp;</p></div>
+    <div style='text-align: right; display: inline-block; float: right'>
+        <div id='match'>Matched: <span id='matchval'></span><span id='reset' title='Clear'>&#x274c;</span></div>&nbsp;&nbsp;
+        <button id='search' title='Search'>&#x1f50d;</button>
+    </div>
+</header>
+
+<div id='canvas-wrapper' style='overflow: hidden; height: 300px; width: 100%'>
+    <canvas id='canvas' style='width: 100%; height: 300px'></canvas>
+    <div id='hl'><span></span></div>
+</div>
+<p>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></p>
+<script>
+${resource:flame.js}
+${resource:simple_heatmap.js}
+renderHeatmap();
+</script>
+</body>
+</html>

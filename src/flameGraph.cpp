@@ -111,14 +111,32 @@ void FlameGraph::dump(std::ostream& out, bool tree) {
         tail = printTill(out, tail, "/*height:*/300");
         out << std::min(depth * 16, MAX_CANVAS_HEIGHT);
 
+        tail = printTill(out, tail, "/*if heatmap css:*/");
+        tail = skipTill(tail, "/*end if heatmap css*/");
+
+        tail = printTill(out, tail, "/*if heatmap html:*/");
+        tail = skipTill(tail, "/*end if heatmap html*/");
+
         tail = printTill(out, tail, "/*title:*/");
         out << _title;
+
+        tail = printTill(out, tail, "/*if color scheme:*/");
+        tail = skipTill(tail, "/*end if color scheme*/");
+
+        tail = printTill(out, tail, "/*if flamegraph html:*/");
+        tail = printTill(out, tail, "/*end if flamegraph html*/");
 
         tail = printTill(out, tail, "/*reverse:*/false");
         out << _reverse ? "true" : "false";
 
         tail = printTill(out, tail, "/*depth:*/0");
         out << depth;
+
+        tail = printTill(out, tail, "/*if flamegraph js:*/");
+        tail = printTill(out, tail, "/*end if flamegraph js*/");
+
+        tail = printTill(out, tail, "/*if heatmap js:*/");
+        tail = skipTill(tail, "/*end if heatmap js*/");
 
         tail = printTill(out, tail, "/*frames:*/");
 
@@ -200,6 +218,10 @@ const char* FlameGraph::printTill(std::ostream& out, const char* data, const cha
     const char* pos = strstr(data, till);
     out.write(data, pos - data);
     return pos + strlen(till);
+}
+
+const char* FlameGraph::skipTill(const char* data, const char* till) {
+    return strstr(data, till) + strlen(till);
 }
 
 // TODO: Reuse frame type embedded in ASGCT_CallFrame

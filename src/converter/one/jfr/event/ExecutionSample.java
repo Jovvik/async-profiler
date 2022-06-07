@@ -23,4 +23,8 @@ public class ExecutionSample extends Event {
         super(time, tid, stackTraceId);
         this.threadState = threadState;
     }
+
+    public int extra() {
+        return threadState;
+    }
 }
