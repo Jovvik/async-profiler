@@ -4,7 +4,7 @@ import java.util.Arrays;
 
 public class IntList {
 
-    public int[] list = new int[256];
+    public int[] list = new int[128];
     public int size;
 
     public void add(int i) {

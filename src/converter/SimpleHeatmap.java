@@ -1,13 +1,14 @@
-import one.jfr.Dictionary;
 import one.jfr.*;
 import one.jfr.event.AllocationSample;
-import one.jfr.event.ContendedLock;
 import one.jfr.event.Event;
 import one.jfr.event.ExecutionSample;
 
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 public class SimpleHeatmap extends ResourceProcessor {
 
@@ -18,9 +19,10 @@ public class SimpleHeatmap extends ResourceProcessor {
     private static final MethodRef UNKNOWN_METHOD_REF = new MethodRef(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID);
     private static final ClassRef UNKNOWN_CLASS_REF = new ClassRef(UNKNOWN_ID);
 
-    private final List<ExecutionSample> executions = new ArrayList<>();
+    private final List<Event> samples = new ArrayList<>();
 
     private final String title;
+    private final boolean alloc;
 
     private Dictionary<StackTrace> stacks;
     private Dictionary<MethodRef> methodRefs;
@@ -31,24 +33,21 @@ public class SimpleHeatmap extends ResourceProcessor {
     private long startTicks;
     private long ticksPerSec;
 
-    public SimpleHeatmap(String title) {
+    public SimpleHeatmap(String title, boolean alloc) {
         this.title = title;
+        this.alloc = alloc;
     }
 
     public void addEvent(Event event) {
-        if (event instanceof ExecutionSample) {
-            executions.add((ExecutionSample) event);
-            return;
+        if (alloc) {
+            if (event instanceof AllocationSample) {
+                samples.add(event);
+            }
+        } else {
+            if (event instanceof ExecutionSample) {
+                samples.add(event);
+            }
         }
-        if (event instanceof AllocationSample) {
-            //allocations.add((AllocationSample) event);
-            return;
-        }
-        if (event instanceof ContendedLock) {
-            //locks.add((ContendedLock) event);
-            return;
-        }
-        throw new IllegalArgumentException("Unknown event: " + event);
     }
 
     public void finish(
@@ -74,7 +73,7 @@ public class SimpleHeatmap extends ResourceProcessor {
     }
 
     private EvaluationContext evaluate(long blockDurationMs) {
-        Collections.sort(executions);
+        Collections.sort(samples);
 
         final Index<byte[]> symbols = new Index<byte[]>() {
             @Override
@@ -91,45 +90,41 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         Dictionary<int[]> stackTraces = new Dictionary<>();
 
-        long duration = ms(executions.get(executions.size() - 1).time);
-        Block[] blocks = new Block[(int) (duration / blockDurationMs) + 1];
+        long durationExecutions = samples.isEmpty() ? 0 : ms(samples.get(samples.size() - 1).time);
+        SampleBlock[] blocks = new SampleBlock[(int) (durationExecutions / blockDurationMs) + 1];
         for (int i = 0; i < blocks.length; i++) {
-            blocks[i] = new Block(rootMethodId, -2);
+            blocks[i] = new SampleBlock();
         }
 
-        for (ExecutionSample execution : executions) {
+        for (Event execution : samples) {
             long timeMs = ms(execution.time);
-            Block block = blocks[(int) (timeMs / blockDurationMs)];
-            block.totalCount++;
+            SampleBlock block = blocks[(int) (timeMs / blockDurationMs)];
+            block.stacks.add(execution.stackTraceId);
 
             int[] stackTrace = stackTraces.get(execution.stackTraceId);
 
-            if (stackTrace == null) {
-                StackTrace originalTrace = stacks.getOrDefault(execution.stackTraceId, UNKNOWN_STACK);
-                stackTrace = new int[originalTrace.methods.length];
-
-                for (int i = originalTrace.methods.length - 1; i >= 0; i--) {
-                    long methodId = originalTrace.methods[i];
-                    byte type = originalTrace.types[i];
-                    int location = originalTrace.locations[i];
-
-                    MethodRef methodRef = methodRefs.getOrDefault(methodId, UNKNOWN_METHOD_REF);
-                    ClassRef classRef = classRefs.getOrDefault(methodRef.cls, UNKNOWN_CLASS_REF);
-                    int className = symbols.index(this.symbols.getOrDefault(classRef.name, UNKNOWN_CLASS_NAME));
-                    int methodName = symbols.index(this.symbols.getOrDefault(methodRef.name, UNKNOWN_METHOD_NAME));
-
-                    Method method = new Method(className, methodName, location, type);
-                    stackTrace[originalTrace.methods.length - 1 - i] = methodIndex.index(method);
-                }
-
-                stackTraces.put(execution.stackTraceId, stackTrace);
+            if (stackTrace != null) {
+                continue;
             }
 
-            for (int methodId : stackTrace) {
-                block = block.getOrCreate(methodId, execution.stackTraceId);
-                block.totalCount++;
+            StackTrace originalTrace = stacks.getOrDefault(execution.stackTraceId, UNKNOWN_STACK);
+            stackTrace = new int[originalTrace.methods.length];
+
+            for (int i = originalTrace.methods.length - 1; i >= 0; i--) {
+                long methodId = originalTrace.methods[i];
+                byte type = originalTrace.types[i];
+                int location = originalTrace.locations[i];
+
+                MethodRef methodRef = methodRefs.getOrDefault(methodId, UNKNOWN_METHOD_REF);
+                ClassRef classRef = classRefs.getOrDefault(methodRef.cls, UNKNOWN_CLASS_REF);
+                int className = symbols.index(this.symbols.getOrDefault(classRef.name, UNKNOWN_CLASS_NAME));
+                int methodName = symbols.index(this.symbols.getOrDefault(methodRef.name, UNKNOWN_METHOD_NAME));
+
+                Method method = new Method(className, methodName, location, type);
+                stackTrace[originalTrace.methods.length - 1 - i] = methodIndex.index(method);
             }
-            block.selfCount++;
+
+            stackTraces.put(execution.stackTraceId, stackTrace);
         }
 
         byte[][] symbolBytes = new byte[symbols.size()][];
@@ -141,145 +136,6 @@ public class SimpleHeatmap extends ResourceProcessor {
                 stackTraces,
                 symbolBytes
         );
-    }
-
-    // MUTATES BLOCKS!
-    private static Block sum(List<Block> blocks) {
-        Block globalTo = blocks.get(0);
-        for (Block globalFrom : blocks.subList(1, blocks.size())) {
-            final ArrayDeque<Block> currentResults = new ArrayDeque<>();
-            currentResults.push(globalTo);
-            currentResults.push(globalFrom);
-
-            do {
-                final Block nextFrom = currentResults.pop();
-                final Block nextTo = currentResults.pop();
-                nextTo.totalCount += nextFrom.totalCount;
-                nextTo.selfCount += nextFrom.selfCount;
-
-                nextFrom.forEach(new Dictionary.Visitor<Block>() {
-                    @Override
-                    public void visit(long key, Block from) {
-                        Block to = nextTo.get(from.methodId);
-                        if (to == null) {
-                            nextTo.putNew(from.methodId, from);
-                        } else {
-                            currentResults.push(to);
-                            currentResults.push(from);
-                        }
-                    }
-                });
-            } while (!currentResults.isEmpty());
-        }
-
-        return globalTo;
-    }
-
-    private static List<Block> sum(final List<Block> blocks, final int blocksInBatch) {
-        final List<Block> result = new ArrayList<>(blocks.size() / blocksInBatch + 1);
-        for (int i = 0; i < blocks.size(); ) {
-            int next = Math.min(i + blocksInBatch, blocks.size());
-            result.add(sum(blocks.subList(i, next)));
-            i = next;
-        }
-        return result;
-    }
-
-    private void preprocessAndWriteHeads(Output out, Block block, EvaluationContext ctx) {
-        int pos = out.pos();
-        out.writeVar(block.totalCount);
-        if (block.totalCount == 0) {
-            out.writeBack(pos);
-            return;
-        }
-
-        ArrayDeque<Block> stack = ctx.blockDeque;
-        stack.add(block);
-
-        Block[] heads = ctx.tmp;
-        int count = 0;
-
-        while (!stack.isEmpty()) {
-            Block current = stack.removeLast();
-            current.used = false;
-            if (current.children == null) {
-                if (heads.length == count) {
-                    ctx.tmp = heads = Arrays.copyOf(ctx.tmp, count * 2);
-                }
-                heads[count++] = current;
-            } else {
-                current.forEach(ctx.addToQueue);
-            }
-        }
-
-        Arrays.sort(heads, 0, count, ctx.STACK_COMPARATOR);
-        if (heads.length <= count * 2) {
-            ctx.tmp = heads = Arrays.copyOf(ctx.tmp, count * 2);
-        }
-        out.writeVar(count);
-
-        int childrenDelta = count;
-        for (int i = 0; i < count; i++) {
-            heads[i + childrenDelta] = block;
-        }
-
-        int prevStackId = 0;
-        for (int i = 0; i < count; i++) {
-            Block head = heads[i];
-            int stackId = ctx.usedStacks.index(head.stackId);
-            out.writeVar(stackId - prevStackId - 1);
-            prevStackId = stackId;
-        }
-
-        int level = 0;
-        int nullCount = 0;
-        while (nullCount < count) {
-            for (int i = 0; i < count; i++) {
-                Block head = heads[i];
-                if (head == null) {
-                    continue;
-                }
-                Block parent = heads[i + childrenDelta];
-
-                int[] methods = ctx.stackTraces.get(head.stackId);
-                if (methods.length <= level) {
-                    heads[i] = null;
-                    nullCount++;
-                    continue;
-                }
-
-                int methodId = methods[level];
-                Block child = parent.get(methodId);
-                assert child != null;
-                if (!child.used) {
-                    child.used = true;
-                    out.writeVar(child.totalCount);
-                    if (child.totalCount == 1) {
-                        heads[i] = null;
-                        nullCount++;
-                        continue;
-                    }
-                }
-
-                heads[i + childrenDelta] = child;
-            }
-            if (nullCount >= count / 2) {
-                for (int left = 0, right = 0; right < count; right++) {
-                    if (heads[right] != null) {
-                        heads[left + childrenDelta] = heads[right + childrenDelta];
-                        heads[left] = heads[right];
-                        left++;
-                    }
-                }
-
-                count -= nullCount;
-                nullCount = 0;
-            }
-
-            level++;
-        }
-
-        out.writeBack(pos);
     }
 
     private void compressMethods(Output out, Method[] methods) {
@@ -346,29 +202,41 @@ public class SimpleHeatmap extends ResourceProcessor {
 
     }
 
-    private void printHeatmap(Output out, EvaluationContext evaluationContext) {
-
-        int pos = out.pos();
-
-        pos = writeBlocks(out, evaluationContext, pos, 0);      // 20ms
-        pos = writeBlocks(out, evaluationContext, pos, 50);     // 1s
-        pos = writeBlocks(out, evaluationContext, pos, 60);     // 1m
-        pos = writeBlocks(out, evaluationContext, pos, 60);     // 1h
-
+    private void printHeatmap(Output out, EvaluationContext context) {
         int maxZoom = 3;
-        out.write30(maxZoom);
-    }
+        out.writeVar(maxZoom);
 
-    private int writeBlocks(Output out, EvaluationContext context, int pos, int batchSize) {
-        if (batchSize != 0) {
-            context.blocks = sum(context.blocks, batchSize);
+        int nextId = 0;
+        LzNode root = new LzNode(nextId++);
+        LzNode next = new LzNode(nextId++);
+
+        out.writeVar(context.blocks.size());
+        for (SampleBlock block : context.blocks) {
+            out.writeVar(block.stacks.size);
+
+            for (int i = 0; i < block.stacks.size; i++) {
+                int stackId = block.stacks.list[i];
+                int[] stack = context.stackTraces.get(stackId);
+                out.writeVar(stack.length);
+
+                LzNode current = root;
+
+                for (int method : stack) {
+                    int prevId = current.id;
+                    current = current.putIfAbsent(method + 1, next);
+                    if (current == null) {
+                        current = root;
+                        next = new LzNode(nextId++);
+                        out.writeVar(prevId);
+                        out.writeVar(method);
+                    }
+                }
+
+                if (current != root) {
+                    out.writeVar(current.id);
+                }
+            }
         }
-        for (Block block : context.blocks) {
-            preprocessAndWriteHeads(out, block, context);
-        }
-        out.write30(batchSize);
-        out.write30(context.blocks.size());
-        return out.writeBack(pos);
     }
 
     private void printConstantPool(Output out, EvaluationContext evaluationContext) {
@@ -387,33 +255,6 @@ public class SimpleHeatmap extends ResourceProcessor {
     }
 
     private void printGlobalStacks(Output out, EvaluationContext evaluationContext) {
-        int[] stackIds = new int[evaluationContext.usedStacks.size()];
-        evaluationContext.usedStacks.orderedKeys(stackIds);
-
-        int nextId = 0;
-        LzNode root = new LzNode(nextId++);
-        LzNode next = new LzNode(nextId++);
-
-        out.writeVar(stackIds.length);
-        for (int stackId : stackIds) {
-            LzNode current = root;
-            int[] stack = evaluationContext.stackTraces.get(stackId);
-            out.writeVar(stack.length);
-
-            for (int method : stack) {
-                int prevId = current.id;
-                current = current.putIfAbsent(method, next);
-                if (current == null) {
-                    current = root;
-                    next = new LzNode(nextId++);
-                    out.writeVar(prevId);
-                    out.writeVar(method);
-                }
-            }
-            if (current != root) {
-                out.writeVar(current.id);
-            }
-        }
     }
 
     private static String printTill(Output out, String tail, String till) {
@@ -469,24 +310,27 @@ public class SimpleHeatmap extends ResourceProcessor {
         }
     }
 
+    private static class SampleBlock {
+        IntList stacks = new IntList();
+    }
+
     private static class Block {
 
-        boolean used;
-        int totalCount = 0;
-        int selfCount = 0;
+        final Block parent;
         final int methodId;
-        final int stackId;
+
+        int stackId = -2;
 
         Object children;
 
-        Block(int methodId, int stackId) {
+        Block(Block parent, int methodId) {
+            this.parent = parent;
             this.methodId = methodId;
-            this.stackId = stackId;
         }
 
-        public Block getOrCreate(int newMethodId, int stackTraceId) {
+        public Block getOrCreate(Block parent, int newMethodId) {
             if (children == null) {
-                Block child = new Block(newMethodId, stackTraceId);
+                Block child = new Block(parent, newMethodId);
                 this.children = child;
                 return child;
             }
@@ -495,7 +339,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                 if (old.methodId == newMethodId) {
                     return old;
                 }
-                Block child = new Block(newMethodId, stackTraceId);
+                Block child = new Block(parent, newMethodId);
                 this.children = new Block[]{old, child};
                 return child;
             }
@@ -512,7 +356,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                     index++;
                 }
                 if (index < children.length) {
-                    Block child = new Block(newMethodId, stackTraceId);
+                    Block child = new Block(parent, newMethodId);
                     children[index] = child;
                     return child;
                 }
@@ -520,7 +364,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                     children = Arrays.copyOf(children, children.length * 2);
                     this.children = children;
 
-                    Block child = new Block(newMethodId, stackTraceId);
+                    Block child = new Block(parent, newMethodId);
                     children[index] = child;
                     return child;
                 }
@@ -528,7 +372,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                 for (Block block : children) {
                     newChildren.put(block.methodId, block);
                 }
-                Block child = new Block(newMethodId, stackTraceId);
+                Block child = new Block(parent, newMethodId);
                 newChildren.put(newMethodId, child);
                 this.children = newChildren;
                 return child;
@@ -540,7 +384,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             if (old != null) {
                 return old;
             }
-            Block child = new Block(newMethodId, stackTraceId);
+            Block child = new Block(parent, newMethodId);
             children.put(newMethodId, child);
             return child;
         }
@@ -570,133 +414,18 @@ public class SimpleHeatmap extends ResourceProcessor {
             Dictionary<Block> children = (Dictionary<Block>) this.children;
             return children.get(methodId);
         }
-
-        public void putNew(int newMethodId, Block child) {
-            if (children == null) {
-                this.children = child;
-                return;
-            }
-            if (children.getClass() == Block.class) {
-                this.children = new Block[]{(Block) children, child};
-                return;
-            }
-            if (children.getClass().isArray()) {
-                Block[] children = (Block[]) this.children;
-                int index = 0;
-                for (Block block : children) {
-                    if (block == null) {
-                        break;
-                    }
-                    index++;
-                }
-                if (index < children.length) {
-                    children[index] = child;
-                    return;
-                }
-                if (children.length < 16) {
-                    children = Arrays.copyOf(children, children.length * 2);
-                    this.children = children;
-                    children[index] = child;
-                    return;
-                }
-                Dictionary<Block> newChildren = new Dictionary<>(children.length * 2);
-                for (Block block : children) {
-                    newChildren.put(block.methodId, block);
-                }
-                newChildren.put(newMethodId, child);
-                this.children = newChildren;
-                return;
-            }
-
-            @SuppressWarnings("unchecked")
-            Dictionary<Block> children = (Dictionary<Block>) this.children;
-            children.put(newMethodId, child);
-        }
-
-        public void forEach(Dictionary.Visitor<Block> blockVisitor) {
-            if (children == null) {
-                return;
-            }
-            if (children.getClass() == Block.class) {
-                Block old = (Block) children;
-                blockVisitor.visit(old.methodId, old);
-                return;
-            }
-            if (children.getClass().isArray()) {
-                Block[] children = (Block[]) this.children;
-                for (Block block : children) {
-                    if (block == null) {
-                        break;
-                    }
-                    blockVisitor.visit(block.methodId, block);
-                }
-                return;
-            }
-
-            @SuppressWarnings("unchecked")
-            Dictionary<Block> children = (Dictionary<Block>) this.children;
-            children.forEach(blockVisitor);
-        }
-
-        public int size() {
-            if (children == null) {
-                return 0;
-            }
-            if (children.getClass() == Block.class) {
-                return 1;
-            }
-            if (children.getClass().isArray()) {
-                Block[] children = (Block[]) this.children;
-                return children.length;
-            }
-
-            @SuppressWarnings("unchecked")
-            Dictionary<Block> children = (Dictionary<Block>) this.children;
-            return children.size();
-        }
-
-        @Override
-        public String toString() {
-            final StringBuilder children = new StringBuilder();
-            forEach(new Dictionary.Visitor<Block>() {
-                @Override
-                public void visit(long key, Block value) {
-                    children.append("'").append(key).append("': ").append(value).append(",");
-                }
-            });
-            if (children.length() > 0) {
-                children.setLength(children.length() - 1);
-            }
-            return "{'c': " + totalCount + ", 'children':{" + children + "}}";
-        }
     }
 
     private static class EvaluationContext {
         final Index<Method> methods;
+        final IndexInt methodsReindex = new IndexInt();
         final byte[][] symbols;
-        final ArrayDeque<Block> blockDeque = new ArrayDeque<>(10 * 1024);
         final IndexInt usedStacks = new IndexInt();
         final Dictionary<int[]> stackTraces;
 
-        List<Block> blocks;
-        Block[] tmp = new Block[10 * 1024];
+        List<SampleBlock> blocks;
 
-        final Dictionary.Visitor<Block> addToQueue = new Dictionary.Visitor<Block>() {
-            @Override
-            public void visit(long key, Block value) {
-                blockDeque.addLast(value);
-            }
-        };
-
-        final Comparator<? super Block> STACK_COMPARATOR = new Comparator<Block>() {
-            @Override
-            public int compare(Block o1, Block o2) {
-                // TODO optimize?
-                return Long.compare(usedStacks.index(o1.stackId), usedStacks.index(o2.stackId));
-            }
-        };
-
-        private EvaluationContext(List<Block> blocks, Index<Method> methods, Dictionary<int[]> stackTraces, byte[][] symbols) {
+        private EvaluationContext(List<SampleBlock> blocks, Index<Method> methods, Dictionary<int[]> stackTraces, byte[][] symbols) {
             this.blocks = blocks;
             this.methods = methods;
             this.stackTraces = stackTraces;
@@ -713,10 +442,6 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         void write(String data);
 
-        int pos();
-
-        int writeBack(int prevPos);
-
         PrintStream asPrintableStream();
 
         void print(long x);
@@ -726,7 +451,6 @@ public class SimpleHeatmap extends ResourceProcessor {
     public static class HtmlOut implements Output {
 
         private final PrintStream out;
-        private int pos = 0;
 
         public HtmlOut(PrintStream out) {
             this.out = out;
@@ -734,7 +458,6 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         private void nextByte(int ch) {
             out.append((char) ch);
-            pos++;
         }
 
         private void write6(int v) {
@@ -778,18 +501,6 @@ public class SimpleHeatmap extends ResourceProcessor {
         @Override
         public void write(String data) {
             out.append(data);
-            pos += data.length();
-        }
-
-        @Override
-        public int pos() {
-            return pos;
-        }
-
-        @Override
-        public int writeBack(int prevPos) {
-            write30(pos - prevPos);
-            return pos;
         }
 
         @Override

@@ -53,16 +53,19 @@ public class jfr2heat {
 
         String input = null;
         String output = null;
+        boolean alloc = false;
 
         for (String arg : args) {
-            if (input == null) {
+            if (arg.equals("--alloc")) {
+                alloc = true;
+            } else if (input == null) {
                 input = arg;
             } else {
                 output = arg;
             }
         }
 
-        SimpleHeatmap fg = new SimpleHeatmap("Heatmap, CPU");
+        SimpleHeatmap fg = new SimpleHeatmap("Heatmap, CPU", alloc);
         try (JfrReader jfr = new JfrReader(input)) {
             new jfr2heat(jfr).convert(fg);
         }

@@ -385,113 +385,82 @@
 
     }
 
-    class StackDecodingContext extends DataBuffer {
-        constructor(encodedData, pos) {
-            super(encodedData);
-            this.pos = pos;
-        }
-    }
-
     class HeatmapCollection extends DataBuffer {
 
-        prevZoomStartPos;
-        zoomToPositions;
-        zoomToGroupSize;
         maxZoom;
-        minZoom;
+        blocks;
+        zoomToCounts;
+        zoomToMaxes;
         zoom;
 
         constructor(encodedData) {
             super(encodedData);
-            this.prevZoomStartPos = this.data.length - 5;
-            this.maxZoom = this.int30(this.prevZoomStartPos);
-            this.minZoom = this.maxZoom + 1;
-            this.zoomToPositions = new Array(this.maxZoom + 1);
-            this.zoomToGroupSize = new Array(this.maxZoom + 1);
+            const lz = new Lz78Data(this);
+
+            this.maxZoom = this.nextVarInt();   // fixme
+            const blocksCount = this.nextVarInt();
+            this.maxZoom = 4;
+
+            this.zoomToCounts = new Array(this.maxZoom);
+            this.zoomToMaxes = new Array(this.maxZoom);
+            const blocks = new Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                const stacksCount = this.nextVarInt();
+                const stacks = new Array(stacksCount);
+                blocks[i] = stacks;
+
+                for (let j = 0; j < stacksCount; j++) {
+                    stacks[j] = lz.readArray();
+                }
+            }
+            this.blocks = blocks;
+
+            let max = 1;
+            let counts = new Uint32Array(blocks.length);
+            for (let i = 0; i < blocksCount; i++) {
+                const count = blocks[i].length;
+                counts[i] = count;
+                max = Math.max(max, count);
+            }
+            this.zoomToCounts[0] = counts;
+            this.zoomToMaxes[0] = max;
+
+            for (let z = 1; z < zoomToGroupSize.length; z++) {
+                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
+                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
+                console.log(size, counts.length)
+                for (let i = 0; i < counts.length; i++) {
+                    const index = (i / size) | 0;
+                    nextCounts[index] += counts[i];
+                    max = Math.max(max, nextCounts[index]);
+                }
+                this.zoomToCounts[z] = counts = nextCounts;
+                this.zoomToMaxes[z] = max;
+            }
+
+            this.data = null;
         }
 
         setZoom(zoom) {
             this.zoom = zoom;
-            this.heatmap();
         }
 
         heatmap() {
-            let zoom = this.zoom;
-            while (this.minZoom > zoom) {
-                let pos = this.prevZoomStartPos;
-                this.minZoom--;
-
-                this.prevZoomStartPos = pos - this.int30(pos - 5) - 5;
-
-                let count = this.int30(pos - 10);
-                let groupSize = this.int30(pos - 15);
-                let positions = new Array(count);
-                pos -= 20;
-
-                let maxValue = 0;
-                for (let i = count - 1; i >= 0; i--) {
-                    pos = pos - this.int30(pos) - 5;
-                    positions[i] = pos + 5;
-                    maxValue = Math.max(maxValue, this.varInt(pos + 5));
-                }
-
-                positions.max = maxValue;
-                this.zoomToPositions[this.minZoom] = positions;
-                this.zoomToGroupSize[this.minZoom] = groupSize;
-            }
-            return this.zoomToPositions[zoom];
+            return this.zoomToCounts[this.zoom];
         }
 
-        collectFramesImpl(from, to, zoom) {
-            if (from > to) {
-                return [];
-            }
-            let result = new Array(to - from + 1);
-            let r = 0;
-            for (let i = from; i <= to; i++) {
-                result[r++] = this.zoomToPositions[zoom][i];
-            }
-
-            return result;
-        }
-
-        collectFramesForZoom(from, to, zoom) {
-            this.heatmap(); // to ensure cached
-            if (zoom < this.maxZoom) {
-                let groupSize = this.zoomToGroupSize[zoom + 1];
-                let fromNextZoom = Math.floor((from - 1) / groupSize) + 1;
-                let toNextZoom = Math.floor((to - (groupSize - 1)) / groupSize);
-                if (fromNextZoom <= toNextZoom) {
-                    let head = this.collectFramesImpl(from, fromNextZoom * groupSize, zoom);
-                    let middle = this.collectFramesForZoom(fromNextZoom, toNextZoom, zoom + 1);
-                    let tail = this.collectFramesImpl(toNextZoom * groupSize, to, zoom);
-                    return middle.concat(head, tail);
-                }
-            }
-
-            return this.collectFramesImpl(from, to, zoom);
-        }
-
-        collectFrames(from, to) {
-            return this.collectFramesForZoom(from, to, this.zoom);
-        }
-
-        totalAt(pos) {
-            return this.varInt(pos)
+        max() {
+            return this.zoomToMaxes[this.zoom];
         }
 
         currentTimeBlock() {
             // FIXME 20 is hardcoded
-            let time = 20;
-            for (let z = 1; z <= this.zoom; z++) {
-                time *= this.zoomToGroupSize[z];
-            }
-            return time;
+            return 20 * zoomToGroupSize[this.zoom];
         }
 
         startBlock() {
             const blockMs = this.currentTimeBlock();
-            const timeBlockMs = blockMs * this.zoomToGroupSize[this.zoom + 1] * 10;
+            const timeBlockMs = blockMs * heatHeight * 10;
             return Math.floor(startMs % timeBlockMs / blockMs);
         }
 
@@ -526,7 +495,7 @@
 
         readArray() {
             let size = this.data.nextVarInt();
-            let result = new Array(size);
+            let result = new Uint32Array(size);
             let index = 0;
             while (index < size) {
                 let subTreeId = this.data.nextVarInt();
@@ -591,6 +560,10 @@
             }
             return r;
         }
+
+        reset() {
+            this.first = this.afterLast = 0;
+        }
     }
 
     function decodeGlobalStacks(data) {
@@ -620,9 +593,17 @@
     let ticksPerSecond = /*ticksPerSecond:*/1;
     let startMs = /*startMs:*/0;
 
-    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
+    const zoomToGroupSize = [
+        1,              // 20 ms
+        50,             // 1 s
+        50 * 5,         // 5 s
+        50 * 60         // 1 m
+    ];
+    const zoomToHeight = [50, 60, 60, 60]
+
     let globalStacks = decodeGlobalStacks(new DataBuffer(claimHtml("globalStacks")));
     let methods = new DataBuffer(claimHtml("methods"));
+    let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
     let cpool = [/*cpool:*/];
 
     let currentHeatmap = executionsHeatmap;
@@ -675,7 +656,8 @@
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: false
+        hourCycle: 'h23',
+        //hour12: false
     };
 
     function methodInfo(methodIndex, out) {
@@ -754,99 +736,65 @@
     }
 
     function prepareFrames(from, to) {
-        let collected = currentHeatmap.collectFrames(from, to);
-        let frames = new Queue();
-        let root = new Map();
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+        from *= mul;
+        to = (to + 1) * mul - 1;
+        if (to >= currentHeatmap.blocks.length) {
+            to = currentHeatmap.blocks.length - 1;
+        }
+
+        const frames = new Queue();
+        const root = new Map();
         root.c = 0;
         root.m = -1;
         root.x = 0;
-        let roots = [root];
+        const roots = [root];
         let levelsCount = 1;
-        for (let pos of collected) {
-            const ctx = new StackDecodingContext(currentHeatmap.data, pos);
-            const totalSize = ctx.nextVarInt();
-            if (totalSize === 0) {
-                continue;
-            }
 
-            root.c += totalSize;
+        for (let pos = from; pos <= to; pos++) {
+            const block = currentHeatmap.blocks[pos];
 
-            frames.push(ctx);
+            root.c += block.length;
 
-            const mergeFrame = new Map();
-            const stackCount = ctx.nextVarInt();
-            let prevStackId = 0;
-            for (let stackIndex = stackCount; stackIndex > 0; stackIndex--) {
-                prevStackId += ctx.nextVarInt() + 1;
-                const stack = globalStacks[prevStackId - 1];
+            for (let stack of block) {
                 levelsCount = Math.max(stack.length + 1, levelsCount);
-                frames.push(stack);
-                frames.push(mergeFrame);
+
                 frames.push(root);
+                frames.push(stack);
             }
-            frames.push(null); // end stacks marker
         }
+
         return [frames, roots, levelsCount]
     }
 
     function nextFrames(frames, level) {
-        frames.push(null); // stack count marker
+        frames.push(null);  // end stacks marker
+
+        let nowFrame = null;
+
         while (true) {
-            const ctx = frames.shift();
-            if (ctx === null) {
+            const frame = frames.shift();
+            if (frame === null) {   // end stack marker
                 break;
             }
 
-            let pushed = false;
-
-            while (true) {
-                const stack = frames.shift();
-                if (stack === null) {
-                    if (pushed) {
-                        frames.push(null); // end stacks marker
-                    }
-                    // else { no need to mark - nothing was pushed }
-                    break;
-                }
-
-                const prevMergeFrame = frames.shift();
-                const prevDestinationFrame = frames.shift();
-
-                if (level < stack.length) {
-                    const methodId = stack[level];
-                    let nowFrame = prevDestinationFrame.get(methodId);
-                    if (nowFrame === undefined) {
-                        nowFrame = new Map();
-                        nowFrame.m = methodId;
-                        nowFrame.c = 0;
-                        prevDestinationFrame.set(methodId, nowFrame);
-                    }
-
-                    if (!pushed) {
-                        frames.push(ctx);
-                        pushed = true;
-                    }
-
-                    let mergeFrame = prevMergeFrame.get(methodId);
-                    if (mergeFrame !== undefined) {
-                        frames.push(stack);
-                        frames.push(mergeFrame);
-                        frames.push(nowFrame);
-                        continue;
-                    }
-
-                    const methodCount = prevMergeFrame.c === 1 ? 1 : ctx.nextVarInt();
-                    nowFrame.c += methodCount;
-
-                    mergeFrame = new Map();
-                    mergeFrame.c = methodCount;
-                    prevMergeFrame.set(methodId, mergeFrame);
-
-                    frames.push(stack);
-                    frames.push(mergeFrame);
-                    frames.push(nowFrame);
-                }
+            const stack = frames.shift();
+            if (level >= stack.length) {
+                continue;
             }
+
+            const methodId = stack[level];
+            nowFrame = frame.get(methodId);
+            if (nowFrame === undefined) {
+                nowFrame = new Map();
+                nowFrame.m = methodId;
+                nowFrame.c = 0;
+                frame.set(methodId, nowFrame);
+            }
+            nowFrame.c++;
+
+            frames.push(nowFrame);
+            frames.push(stack);
         }
     }
 
@@ -983,19 +931,23 @@
     }
 
     function redrawHeatSamplesImpl(from, to, dx) {
-
-        const heatmap = currentHeatmap.heatmap()
         const patternDraw = !!pattern;
         const startBlock = currentHeatmap.startBlock();
+
+        const max = currentHeatmap.max();
+        const heatmap = currentHeatmap.heatmap();
+
         for (let index = from; index <= to; index++) {
             let color;
             let i = index - startBlock;
             if (i < 0 || i >= heatmap.length) {
                 color = '#ddd';
             } else {
+                let count = heatmap[i];
+
                 let useFound = patternDraw && searchExecutedCount > i;
-                let maxValue = useFound ? searchMax : heatmap.max;
-                let value = useFound ? found[i] : currentHeatmap.totalAt(heatmap[i]);
+                let maxValue = useFound ? searchMax : max;
+                let value = useFound ? found[i] : count;
                 let ratio = value / (maxValue || 1);
 
                 if (useFound) {
@@ -1046,11 +998,10 @@
 
         heatC.fillStyle = '#000';
 
-        let groupSize = currentHeatmap.zoomToGroupSize[currentHeatmap.zoom + 1];
+        let groupSize = heatHeight;
         let oneBlockMs = currentHeatmap.currentTimeBlock();
         let oneGroupMs = oneBlockMs * groupSize;
         let oneMarkMs = oneGroupMs * blocksBetweenMarks;
-        let padding = canvasScrollPadding * sqScale;
         for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
             let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
             let ms = origin + markIndex * oneMarkMs;
@@ -1090,7 +1041,7 @@
         }, function (){});
 
         currentHeatmap.setZoom(zoom);
-        heatHeight = currentHeatmap.zoomToGroupSize[zoom + 1];
+        heatHeight = zoomToHeight[zoom];
 
         const m = devicePixelRatio || 1;
         sqScale = m;
@@ -1157,78 +1108,27 @@
                 matchedMethods.add(index);
             }
         }
-        const frames = new Queue();
+
+        let mul = zoomToGroupSize[currentHeatmap.zoom];
+
         addTask('search', function () {
-            const ctx = new StackDecodingContext(currentHeatmap.data, heatmap[searchExecutedCount]);
-
-            const totalSize = ctx.nextVarInt();
-            if (totalSize === 0) {  // todo optimize allocation?
-                searchExecutedCount++;
-                return searchExecutedCount < count;
-            }
-
-            const mergeFrame = new Map();
-            const stackCount = ctx.nextVarInt();
-            let prevStackId = 0;
-            for (let stackIndex = stackCount; stackIndex > 0; stackIndex--) {
-                prevStackId += ctx.nextVarInt() + 1;
-                frames.push(globalStacks[prevStackId - 1]);
-                frames.push(mergeFrame);
-            }
-            frames.push(null);
-
             let amount = 0;
-            let level = 0;
-            while (true) {
-                const stack = frames.shift();
-                if (stack === null) {
-                    level++;
-                    if (frames.size() === 0) {
-                        break;
-                    }
-                    frames.push(null);
+            const from = searchExecutedCount * mul;
+            const to = (searchExecutedCount + 1) * mul;
+            for (let i = from; i < to; i++) {
+                const stacks = currentHeatmap.blocks[i];
+                if (stacks === undefined) {
                     continue;
                 }
 
-                const mergeFrame = frames.shift();
-
-                if (level >= stack.length) {
-                    continue;
-                }
-
-                const method = stack[level];
-                let nextMergeFrame = mergeFrame.get(method);
-                if (nextMergeFrame === undefined) {
-
-                    const count = ctx.nextVarInt();
-
-                    let matched = mergeFrame.matched;
-                    if (!matched) {
-                        matched = matchedMethods.has(method);
-                        if (matched) {
-                            amount += count;
+                for (let stack of stacks) {
+                    for (let methodIndex of stack) {
+                        if (matchedMethods.has(methodIndex)) {
+                            amount++;
+                            break;
                         }
                     }
-                    if (count === 1) {
-                        if (!matched) {
-                            for (let i = level + 1; i < stack.length; i++) {
-                                const method = stack[i];
-                                if (matchedMethods.has(method)) {
-                                    amount++;
-                                    break;
-                                }
-                            }
-                        }
-                        continue;
-                    }
-
-                    nextMergeFrame = new Map();
-                    nextMergeFrame.matched = matched;
-                    mergeFrame.set(method, nextMergeFrame);
                 }
-
-                frames.push(stack);
-                frames.push(nextMergeFrame);
             }
 
             if (searchMax < amount) {
@@ -1237,7 +1137,6 @@
             }
 
             found[searchExecutedCount] = amount;
-            console.log(amount);
             searchExecutedCount++;
             if (searchExecutedCount >= count) {
                 renderFunc();
@@ -1257,7 +1156,17 @@
     function renderHeatmap() {
         let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
         heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
-        fillCanvasWithEvents(0);
+
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length; z++) {
+            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+
+        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
 
         renderTraces(0, currentHeatmap.heatmap().length - 1);
     }
@@ -1286,8 +1195,8 @@
     });
 
     document.getElementById('heatmap-height-line').onclick = function() {
-        fillCanvasWithEvents((currentHeatmap.zoom + 1) % (currentHeatmap.maxZoom));
-        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 sec : 5 min ',' 1 hr  : 1 min '][currentHeatmap.zoom];
         highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
         for (let suffix of ['Selection', 'Diff', 'Active']) {
             for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
@@ -1381,9 +1290,8 @@
         const heatmap = currentHeatmap.heatmap();
         if (index >= 0 && index < heatmap.length) {
             const ms = startMs + currentHeatmap.currentTimeBlock() * index;
-            const pos = heatmap[index];
-            const total = currentHeatmap.totalAt(pos);
-            const max = heatmap.max;
+            const total =  heatmap[index];
+            const max = currentHeatmap.max();
             heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort);
             const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
             const searchText = searchExecutedCount > index
