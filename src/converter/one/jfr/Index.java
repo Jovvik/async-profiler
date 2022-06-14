@@ -39,7 +39,8 @@ public class Index<T> {
         int mask = keys.length - 1;
         int i = hashCode(key) & mask;
         while (keys[i] != null) {
-            if (keys[i].equals(key)) {
+            //noinspection unchecked
+            if (equals((T) keys[i], key)) {
                 return values[i];
             }
             i = (i + 1) & mask;
@@ -94,6 +95,10 @@ public class Index<T> {
 
         keys = newKeys;
         values = newValues;
+    }
+
+    protected boolean equals(T k1, T k2) {
+        return k1.equals(k2);
     }
 
     protected int hashCode(T key) {

@@ -52,6 +52,46 @@ public class IndexInt {
         return size;
     }
 
+    public int shift(int key) {
+        if (key == 0) {
+            throw new NullPointerException();
+        }
+        int mask = keys.length - 1;
+        int i = hashCode(key) & mask;
+        while (keys[i] != 0) {
+            if (keys[i] == key) {
+                keys[i] = 0;
+                for (int j = 0; j < keys.length; j++) {
+                    int tKey = keys[j];
+                    if (tKey != 0) {
+                        if (values[j] > values[i]) {
+                            values[j]--;
+                        }
+                    }
+                }
+                return values[i];
+            }
+            i = (i + 1) & mask;
+        }
+        return 0;
+    }
+
+    public int index(int key, int notFound) {
+        int mask = keys.length - 1;
+        int i = hashCode(key) & mask;
+        while (keys[i] != 0) {
+            if (keys[i] == key) {
+                return values[i];
+            }
+            i = (i + 1) & mask;
+        }
+        return notFound;
+    }
+
+    public boolean has(int key) {
+        return index(key, 0) != 0;
+    }
+
     @SuppressWarnings("unchecked")
     public void orderedKeys(int[] out) {
         for (int i = 0; i < keys.length; i++) {
@@ -99,5 +139,4 @@ public class IndexInt {
         key *= 0xc6a4a7935bd1e995L;
         return (int) (key ^ (key >>> 32));
     }
-
 }

@@ -395,40 +395,55 @@
 
         constructor(encodedData) {
             super(encodedData);
-            const lz = new Lz78Data(this);
 
             this.maxZoom = this.nextVarInt();   // fixme
+            this.maxZoom = 3;
+
+            const startMethodsCount = this.nextVarInt();
+            const starts = new Set();
+            for (let i = 0; i < startMethodsCount; i++) {
+                starts.add(this.nextVarInt());
+            }
+
+            const lz = new Lz78Data(this, starts);
+
+            let max = 1;
+
+            let prevByte = -1;
             const blocksCount = this.nextVarInt();
-            this.maxZoom = 4;
+            let counts = new Uint32Array(blocksCount);
+            for (let i = 0; i < blocksCount; i++) {
+                let v = 0;
+                let p = 0;
+                let hasMore = false;
+                do {
+                    if (prevByte === -1) {
+                        prevByte = this.byteAt(this.pos++);
+                        hasMore = (prevByte >>> 5) === 1;
+                        v |= ((prevByte >>> 3) & 3) << p;
+                        prevByte &= 7;
+                    } else {
+                        hasMore = (prevByte >>> 2) === 1;
+                        v |= (prevByte & 3) << p;
+                        prevByte = -1;
+                    }
+                    p += 2;
+                } while (hasMore);
+                counts[i] = v;
+                max = Math.max(max, v);
+            }
+
+            this.blocks = lz.decode(counts);
 
             this.zoomToCounts = new Array(this.maxZoom);
             this.zoomToMaxes = new Array(this.maxZoom);
-            const blocks = new Array(blocksCount);
-            for (let i = 0; i < blocksCount; i++) {
-                const stacksCount = this.nextVarInt();
-                const stacks = new Array(stacksCount);
-                blocks[i] = stacks;
 
-                for (let j = 0; j < stacksCount; j++) {
-                    stacks[j] = lz.readArray();
-                }
-            }
-            this.blocks = blocks;
-
-            let max = 1;
-            let counts = new Uint32Array(blocks.length);
-            for (let i = 0; i < blocksCount; i++) {
-                const count = blocks[i].length;
-                counts[i] = count;
-                max = Math.max(max, count);
-            }
             this.zoomToCounts[0] = counts;
             this.zoomToMaxes[0] = max;
 
             for (let z = 1; z < zoomToGroupSize.length; z++) {
                 const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
                 const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
-                console.log(size, counts.length)
                 for (let i = 0; i < counts.length; i++) {
                     const index = (i / size) | 0;
                     nextCounts[index] += counts[i];
@@ -470,45 +485,95 @@
 
     }
 
-    class LzChunk {
-        data;
+    class LzChunk extends Uint32Array {
+        constructor(size) {
+            super(size);
+        }
 
         copyWithNext(element) {
-            let result = new LzChunk();
-            result.data = Array.from(this.data);
-            result.data.push(element);
+            let result = new LzChunk(this.length + 1);
+            result.set(this);
+            result[this.length] = element;
             return result;
         }
     }
 
     class Lz78Data {
         data;
+        starts;
         lz78;
 
-        constructor(data) {
-            this.data = data;
+        tmp = [];
+        prevSubTreeId = -1;
 
-            let empty = new LzChunk();
-            empty.data = [];
-            this.lz78 = [empty];
+        constructor(data, starts) {
+            this.data = data;
+            this.starts = starts;
+
+            this.lz78 = [new LzChunk(0)];
         }
 
-        readArray() {
-            let size = this.data.nextVarInt();
-            let result = new Uint32Array(size);
-            let index = 0;
-            while (index < size) {
-                let subTreeId = this.data.nextVarInt();
-                let subTree = this.lz78[subTreeId];
-                for (let e of subTree.data) {
-                    result[index++] = e;
-                }
-                if (index < size) {
-                    let e = this.data.nextVarInt();
-                    result[index++] = e;
-                    this.lz78.push(subTree.copyWithNext(e));
+        decode(counts) {
+            const synonymsCount = this.data.nextVarInt();
+            const synonyms = new Uint32Array(synonymsCount);
+            for (let i = 0; i < synonymsCount; i++) {
+                synonyms[i] = this.data.nextVarInt();
+            }
+
+            const tailsCount = this.data.nextVarInt();
+            const tails = new Uint32Array(tailsCount);
+            for (let i = 0; i < tailsCount; i++) {
+                const tail = this.data.nextVarInt();
+                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
+            }
+
+            const result = new Array(counts.length);
+            for (let i = 0; i < counts.length; i++) {
+                result[i] = new Array(counts[i]);
+            }
+
+            let thisChunk = null;
+            let currentTail = 0;
+            const tmp = [];
+            for (let block of result) {
+                for (let i = 0; i < block.length; i++, currentTail++) {
+                    const tailId = tails[currentTail];
+                    if (tailId < this.lz78.length) {
+                        const tail = this.lz78[tailId];
+                        if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            block[i] = tail;
+                            continue;
+                        }
+                    }
+
+                    if (thisChunk === null) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+                    }
+
+                    tmp.length = 0;
+                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
+
+                    while (true) {
+                        const chunkId = this.data.nextVarInt();
+                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
+                        const addMethodId = this.data.nextVarInt();
+                        thisChunk = prevChunk.copyWithNext(addMethodId);
+                        this.lz78.push(thisChunk);
+
+                        if (this.starts.has(thisChunk[0])) {
+                            block[i] = new Uint32Array(tmp);
+                            break;
+                        } else {
+                            tmp.push(...thisChunk);
+                        }
+                    }
                 }
             }
+
             return result;
         }
     }
@@ -566,17 +631,6 @@
         }
     }
 
-    function decodeGlobalStacks(data) {
-        let count = data.nextVarInt();
-        let result = new Array(count);
-
-        let lz = new Lz78Data(data);
-        for (let i = 0; i < count; i++) {
-            result[i] = lz.readArray();
-        }
-        return result;
-    }
-
     function claimHtml(id) {
         let e = document.getElementById(id);
         let r = e.innerHTML;
@@ -587,7 +641,7 @@
     let sq = 5;
     let sqPx = sq;
     let sqScale = 1;
-    const canvasScrollPadding = 100;
+    const canvasScrollPadding = 200;
     let canvasTimeHeight = 12;
     let canvasTimeHeightPx = 12;
     let ticksPerSecond = /*ticksPerSecond:*/1;
@@ -601,7 +655,6 @@
     ];
     const zoomToHeight = [50, 60, 60, 60]
 
-    let globalStacks = decodeGlobalStacks(new DataBuffer(claimHtml("globalStacks")));
     let methods = new DataBuffer(claimHtml("methods"));
     let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
     let cpool = [/*cpool:*/];
@@ -684,7 +737,15 @@
 
     function title(methodIndex, out) {
         methodInfo(methodIndex, out);
-        return out.className === '' ? out.methodName : out.className + "." + out.methodName + ":" + (out.location & 0xffff);
+        const codeLine = (out.location & 0xffff);
+        let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
+
+        const className = (out.type >= 3 && out.type <= 5) ? '' : out.className;
+        if (out.name === '') {
+            return className;
+        }
+
+        return (className === '' ? out.methodName : className + "." + out.methodName) + locationSuffix;
     }
 
     let bgInterval = null;
@@ -879,10 +940,21 @@
         let levelToRedraw = 0;
         let methodInfoOut = {};
 
+        let minDiff = 0;
+        let maxDiff = 0;
+
         addTask('flame', function () {
                 nextFrames(frames, currentLevel);
                 nextFrames(baseFrames, currentLevel);
                 let level = levels[currentLevel];
+
+                for (let root of roots) {
+                    let wasCount = root.b === undefined ? 0 : root.b.c;
+                    if (wasCount !== 0) {
+                        maxDiff = Math.max(maxDiff, root.c - wasCount);
+                        minDiff = Math.min(minDiff, root.c - wasCount)
+                    }
+                }
 
                 let nextRoots = [];
                 for (let root of roots) {
@@ -892,13 +964,15 @@
                     const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
                     let color;
                     if (wasCount === 0) {
-                        color = "#baa551";
-                    } else if (wasCount === root.c) {
-                        color = "#f0f0c0";
-                    } else if (wasCount > root.c) {
-                        color = "#99aaff";
+                        color = "#dac571";
+                    } else if (wasCount >= root.c) {
+                        const ratio = (root.c - wasCount) / minDiff;
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                        //color = "#99aaff";
                     } else {
-                        color = "#ffaa99";
+                        const ratio = (root.c - wasCount) / maxDiff;
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                        //color = "#ffaa99";
                     }
                     level.push({left: x, width: root.c, color: color, title: t});
 
@@ -976,7 +1050,7 @@
             heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
         }
 
-        let blocksBetweenMarks = 10;
+        let blocksBetweenMarks = 20;
 
         let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
         let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
@@ -1196,7 +1270,7 @@
 
     document.getElementById('heatmap-height-line').onclick = function() {
         fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
-        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 sec : 5 min ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
         highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
         for (let suffix of ['Selection', 'Diff', 'Active']) {
             for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {

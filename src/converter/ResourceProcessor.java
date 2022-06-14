@@ -23,12 +23,14 @@ public class ResourceProcessor {
     }
 
     static String printTill(PrintStream out, String data, String till) {
+        System.out.println("printTill " + till);
         int index = data.indexOf(till);
         out.print(data.substring(0, index));
         return data.substring(index + till.length());
     }
 
     static String skipTill(String data, String till) {
+        System.out.println("skipTill " + till);
         return data.substring(data.indexOf(till) + till.length());
     }
 }
