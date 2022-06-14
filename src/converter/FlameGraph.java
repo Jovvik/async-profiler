@@ -16,9 +16,11 @@
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.io.Reader;
@@ -35,40 +37,21 @@ public class FlameGraph extends ResourceProcessor {
     public static final byte FRAME_KERNEL = 5;
     public static final byte FRAME_C1_COMPILED = 6;
 
-    public String title = "Flame Graph";
-    public boolean reverse;
-    public double minwidth;
-    public int skip;
-    public String input;
-    public String output;
-
+    private final Arguments args;
     private final Frame root = new Frame(FRAME_NATIVE);
     private int depth;
     private long mintotal;
 
+    public FlameGraph(Arguments args) {
+        this.args = args;
+    }
+
     public FlameGraph(String... args) {
-        for (int i = 0; i < args.length; i++) {
-            String arg = args[i];
-            if (!arg.startsWith("--") && !arg.isEmpty()) {
-                if (input == null) {
-                    input = arg;
-                } else {
-                    output = arg;
-                }
-            } else if (arg.equals("--title")) {
-                title = args[++i];
-            } else if (arg.equals("--reverse")) {
-                reverse = true;
-            } else if (arg.equals("--minwidth")) {
-                minwidth = Double.parseDouble(args[++i]);
-            } else if (arg.equals("--skip")) {
-                skip = Integer.parseInt(args[++i]);
-            }
-        }
+        this(new Arguments(args));
     }
 
     public void parse() throws IOException {
-        parse(new InputStreamReader(new FileInputStream(input), StandardCharsets.UTF_8));
+        parse(new InputStreamReader(new FileInputStream(args.input), StandardCharsets.UTF_8));
     }
 
     public void parse(Reader in) throws IOException {
@@ -86,12 +69,12 @@ public class FlameGraph extends ResourceProcessor {
 
     public void addSample(String[] trace, long ticks) {
         Frame frame = root;
-        if (reverse) {
-            for (int i = trace.length; --i >= skip; ) {
+        if (args.reverse) {
+            for (int i = trace.length; --i >= args.skip; ) {
                 frame = frame.addChild(trace[i], ticks);
             }
         } else {
-            for (int i = skip; i < trace.length; i++) {
+            for (int i = args.skip; i < trace.length; i++) {
                 frame = frame.addChild(trace[i], ticks);
             }
         }
@@ -101,10 +84,10 @@ public class FlameGraph extends ResourceProcessor {
     }
 
     public void dump() throws IOException {
-        if (output == null) {
+        if (args.output == null) {
             dump(System.out);
         } else {
-            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(output), 32768);
+            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(args.output), 32768);
                  PrintStream out = new PrintStream(bos, false, "UTF-8")) {
                 dump(out);
             }
@@ -112,7 +95,7 @@ public class FlameGraph extends ResourceProcessor {
     }
 
     public void dump(PrintStream out) {
-        mintotal = (long) (root.total * minwidth / 100);
+        mintotal = (long) (root.total * args.minwidth / 100);
         int depth = mintotal > 1 ? root.depth(mintotal) : this.depth + 1;
 
         String tail = getResource("/flame.html");
@@ -127,7 +110,7 @@ public class FlameGraph extends ResourceProcessor {
         tail = skipTill(tail, "/*end if heatmap html*/");
 
         tail = printTill(out, tail, "/*title:*/");
-        out.print(title);
+        out.print(args.title);
 
         tail = printTill(out, tail, "/*if color scheme:*/");
         tail = skipTill(tail, "/*end if color scheme*/");
@@ -136,7 +119,7 @@ public class FlameGraph extends ResourceProcessor {
         tail = printTill(out, tail, "/*end if flamegraph html*/");
 
         tail = printTill(out, tail, "/*reverse:*/false");
-        out.print(reverse);
+        out.print(args.reverse);
 
         tail = printTill(out, tail, "/*depth:*/0");
         out.print(depth);
@@ -151,6 +134,9 @@ public class FlameGraph extends ResourceProcessor {
 
         printFrame(out, "all", root, 0, 0);
 
+        tail = printTill(out, tail, "/*highlight:*/");
+        out.print(args.highlight != null ? "'" + escape(args.highlight) + "'" : "");
+
         out.print(tail);
     }
 
@@ -159,18 +145,12 @@ public class FlameGraph extends ResourceProcessor {
         if (type == FRAME_KERNEL) {
             title = stripSuffix(title);
         }
-        if (title.indexOf('\\') >= 0) {
-            title = title.replace("\\", "\\\\");
-        }
-        if (title.indexOf('\'') >= 0) {
-            title = title.replace("'", "\\'");
-        }
 
         if ((frame.inlined | frame.c1 | frame.interpreted) != 0 && frame.inlined < frame.total && frame.interpreted < frame.total) {
-            out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + title + "'," +
+            out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + escape(title) + "'," +
                     frame.inlined + "," + frame.c1 + "," + frame.interpreted + ")");
         } else {
-            out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + title + "')");
+            out.println("f(" + level + "," + x + "," + frame.total + "," + type + ",'" + escape(title) + "')");
         }
 
         x += frame.self;
@@ -187,9 +167,15 @@ public class FlameGraph extends ResourceProcessor {
         return title.substring(0, title.length() - 4);
     }
 
-    public static void main(String[] args) throws IOException {
-        FlameGraph fg = new FlameGraph(args);
-        if (fg.input == null) {
+    static String escape(String s) {
+        if (s.indexOf('\\') >= 0) s = s.replace("\\", "\\\\");
+        if (s.indexOf('\'') >= 0) s = s.replace("'", "\\'");
+        return s;
+    }
+
+    public static void main(String[] cmdline) throws IOException {
+        Arguments args = new Arguments(cmdline);
+        if (args.input == null) {
             System.out.println("Usage: java " + FlameGraph.class.getName() + " [options] input.collapsed [output.html]");
             System.out.println();
             System.out.println("Options:");
@@ -197,9 +183,11 @@ public class FlameGraph extends ResourceProcessor {
             System.out.println("  --reverse");
             System.out.println("  --minwidth PERCENT");
             System.out.println("  --skip FRAMES");
+            System.out.println("  --highlight PATTERN");
             System.exit(1);
         }
 
+        FlameGraph fg = new FlameGraph(args);
         fg.parse();
         fg.dump();
     }
