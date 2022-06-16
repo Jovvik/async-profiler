@@ -11,9 +11,8 @@ import java.util.*;
 public class SimpleHeatmap extends ResourceProcessor {
 
     private static final int UNKNOWN_ID = -1;
-    private static final byte[] EMPTY = "".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] UNKNOWN_METHOD_NAME = "<UnknownMethod>".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] UNKNOWN_CLASS_NAME = "<UnknownClass>".getBytes(StandardCharsets.UTF_8);
+    private static final String UNKNOWN_METHOD_NAME = "<UnknownMethod>";
+    private static final String UNKNOWN_CLASS_NAME = "<UnknownClass>";
     private static final StackTrace UNKNOWN_STACK = new StackTrace(new long[]{UNKNOWN_ID}, new byte[]{3}, new int[]{0});
     private static final MethodRef UNKNOWN_METHOD_REF = new MethodRef(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID);
     private static final ClassRef UNKNOWN_CLASS_REF = new ClassRef(UNKNOWN_ID);
@@ -75,14 +74,9 @@ public class SimpleHeatmap extends ResourceProcessor {
         System.out.println("Evaluation started");
         Collections.sort(samples);
 
-        final Index<byte[]> symbols = new Index<byte[]>() {
-            @Override
-            protected int hashCode(byte[] key) {
-                return Arrays.hashCode(key);
-            }
-        };
+        final Index<String> symbols = new Index<>();
         symbols.preallocate(this.symbols.size());
-        Method rootMethod = new Method(symbols.index("all".getBytes()), symbols.index(new byte[0]));
+        Method rootMethod = new Method(symbols.index("all"), symbols.index(""));
 
         final Index<Method> methodIndex = new Index<>();
 
@@ -138,18 +132,27 @@ public class SimpleHeatmap extends ResourceProcessor {
 
                 MethodRef methodRef = methodRefs.getOrDefault(methodId, UNKNOWN_METHOD_REF);
                 ClassRef classRef = classRefs.getOrDefault(methodRef.cls, UNKNOWN_CLASS_REF);
-                int className = symbols.index(this.symbols.getOrDefault(classRef.name, UNKNOWN_CLASS_NAME));
-                int methodName = symbols.index(this.symbols.getOrDefault(methodRef.name, UNKNOWN_METHOD_NAME));
+
+                byte[] classNameBytes = this.symbols.get(classRef.name);
+                byte[] methodNameBytes = this.symbols.get(methodRef.name);
+
+                String classNameString = classNameBytes == null ? UNKNOWN_CLASS_NAME : convertClassName(classNameBytes);
+                String methodNameString = methodNameBytes == null ? UNKNOWN_METHOD_NAME : new String(methodNameBytes);
+
+                int className = symbols.index(classNameString);
+                int methodName = symbols.index(methodNameString);
 
                 Method method = new Method(className, methodName, location, type);
                 stackTrace[originalTrace.methods.length - 1 - i] = methodIndex.index(method);
             }
             if (alloc) {
                 ClassRef classRef = classRefs.getOrDefault(execution.extra(), UNKNOWN_CLASS_REF);
-                byte[] classNameBytes = this.symbols.getOrDefault(classRef.name, UNKNOWN_CLASS_NAME);
-                int className = symbols.index(classNameBytes);
-                int methodName = symbols.index(EMPTY);
-                stackTrace[originalTrace.methods.length] = methodIndex.index(new Method(className, methodName, 0, (byte) 2));
+                byte[] classNameBytes = this.symbols.get(classRef.name);
+                String classNameString = classNameBytes == null ? UNKNOWN_CLASS_NAME : convertClassName(classNameBytes);
+                int className = symbols.index(classNameString);
+                int methodName = symbols.index("");
+                byte type = ((AllocationSample)execution).tlabSize == 0 ? (byte) 3 : (byte) 2;
+                stackTrace[originalTrace.methods.length] = methodIndex.index(new Method(className, methodName, 0, type));
             }
 
             stackTraces.put((long)execution.extra() << 32 | execution.stackTraceId, stackTrace);
@@ -162,7 +165,7 @@ public class SimpleHeatmap extends ResourceProcessor {
         int[][] stacks = new int[stackTracesRemap.size()][];
         stackTracesRemap.orderedKeys(stacks);
 
-        byte[][] symbolBytes = new byte[symbols.size()][];
+        String[] symbolBytes = new String[symbols.size()];
         symbols.orderedKeys(symbolBytes);
 
         return new EvaluationContext(
@@ -171,6 +174,47 @@ public class SimpleHeatmap extends ResourceProcessor {
                 stacks,
                 symbolBytes
         );
+    }
+
+    private String convertClassName(byte[] className) {
+        if (className.length == 0) {
+            return "";
+        }
+        int arrayDepth = 0;
+        while (className[arrayDepth] == '[') {
+            arrayDepth++;
+        }
+
+        StringBuilder sb = new StringBuilder(toJavaClassName(className, arrayDepth));
+        while (arrayDepth-- > 0) {
+            sb.append("[]");
+        }
+        return sb.toString();
+    }
+
+    private String toJavaClassName(byte[] symbol, int start) {
+        switch (symbol[start]) {
+            case 'B':
+                return "byte";
+            case 'C':
+                return "char";
+            case 'S':
+                return "short";
+            case 'I':
+                return "int";
+            case 'J':
+                return "long";
+            case 'Z':
+                return "boolean";
+            case 'F':
+                return "float";
+            case 'D':
+                return "double";
+            case 'L':
+                return new String(symbol, start + 1, symbol.length - start - 2, StandardCharsets.UTF_8).replace('/', '.');
+            default:
+                return new String(symbol, start, symbol.length - start, StandardCharsets.UTF_8).replace('/', '.');
+        }
     }
 
     private void compressMethods(Output out, Method[] methods) {
@@ -347,9 +391,6 @@ public class SimpleHeatmap extends ResourceProcessor {
             int tailId = list.list[i] - synonymsDelta;
             int index = synonyms.index(tailId, -1);
             out.writeVar(index == -1 ? tailId : index - 1);
-            if (i < 100) {
-                System.out.println(i + " " + (index - 1) + " " + tailId + " " + (tailId - synonymsCount));
-            }
         }
         System.out.println("tails " + (out.pos() - was) / 1024);
 
@@ -358,14 +399,20 @@ public class SimpleHeatmap extends ResourceProcessor {
         next = new LzNode(nextId++);
 
         was = out.pos();
-        int j = 0;
         int b = 0;
         for (SampleBlock block : context.blocks) {
+            boolean debug = b == 26;
             for (int i = 0; i < block.stacks.size; i++) {
+                if (debug) {
+                    System.out.println("debug " + i);
+                }
                 LzNode current = root;
                 int stackId = block.stacks.list[i];
                 int[] stack = context.stackTraces[stackId - 1];
                 for (int methodId : stack) {
+                    if (debug) {
+                        System.out.println("MethodId " + methodId);
+                    }
                     int prevId = current.id;
                     current = current.putIfAbsent(methodId, next);
                     if (current == null) {
@@ -374,16 +421,14 @@ public class SimpleHeatmap extends ResourceProcessor {
                         int index = synonyms.index(prevId, -1);
                         out.writeVar(index == -1 ? prevId : index - 1);
                         out.writeVar(methodId);
-                        if (j < 100) {
-                            System.out.println("thisChunk === null " + " " + (index == -1 ? prevId : index - 1) + " " + prevId + " " + (next.id - 1));
+                        if (debug) {
+                            System.out.println("Dump " + prevId + " " + methodId);
                         }
                     }
                 }
-                if (j < 100) {
-                    // 29 4519 33149 381
-                    // 29 33149 4519 72
-                    System.out.println("-> " + j + " " + current.id + " " + (synonyms.index(current.id, -1) - 1) + " " + b);
-                    j++;
+                if (debug) {
+                    System.out.println("Ends with " + current.id);
+                    System.out.println();
                 }
             }
             b++;
@@ -397,9 +442,9 @@ public class SimpleHeatmap extends ResourceProcessor {
     }
 
     private void printConstantPool(Output out, EvaluationContext evaluationContext) {
-        for (byte[] symbol : evaluationContext.symbols) {
+        for (String symbol : evaluationContext.symbols) {
             out.write("\"");
-            out.write(new String(symbol, StandardCharsets.UTF_8));
+            out.write(symbol);
             out.write("\",");
         }
     }
@@ -484,11 +529,11 @@ public class SimpleHeatmap extends ResourceProcessor {
     private static class EvaluationContext {
         final Index<Method> methods;
         final int[][] stackTraces;
-        final byte[][] symbols;
+        final String[] symbols;
 
         List<SampleBlock> blocks;
 
-        private EvaluationContext(List<SampleBlock> blocks, Index<Method> methods, int[][] stackTraces, byte[][] symbols) {
+        private EvaluationContext(List<SampleBlock> blocks, Index<Method> methods, int[][] stackTraces, String[] symbols) {
             this.blocks = blocks;
             this.methods = methods;
             this.stackTraces = stackTraces;

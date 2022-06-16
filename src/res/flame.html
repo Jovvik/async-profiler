@@ -475,12 +475,12 @@
 
         startBlock() {
             const blockMs = this.currentTimeBlock();
-            const timeBlockMs = blockMs * heatHeight * 10;
+            const timeBlockMs = blockMs * heatHeight * 20;
             return Math.floor(startMs % timeBlockMs / blockMs);
         }
 
         count() {
-            return Math.ceil((this.heatmap().length + this.startBlock()) / 10 / heatHeight) * 10 * heatHeight;
+            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
         }
 
     }
@@ -565,6 +565,8 @@
                         this.lz78.push(thisChunk);
 
                         if (this.starts.has(thisChunk[0])) {
+                            const tail = this.lz78[tailId];
+                            tmp.push(...tail);
                             block[i] = new Uint32Array(tmp);
                             break;
                         } else {
@@ -740,12 +742,17 @@
         const codeLine = (out.location & 0xffff);
         let locationSuffix = codeLine === 0 ? "" : (":" + codeLine);
 
-        const className = (out.type >= 3 && out.type <= 5) ? '' : out.className;
-        if (out.name === '') {
-            return className;
+        if (out.methodName === '') {
+            return out.className + locationSuffix;
+        }
+        if (out.className === '') {
+            return out.methodName + locationSuffix;
+        }
+        if (out.type >= 3 && out.type <= 5) {
+            return out.methodName + locationSuffix;
         }
 
-        return (className === '' ? out.methodName : className + "." + out.methodName) + locationSuffix;
+        return out.className + "." + out.methodName + locationSuffix;
     }
 
     let bgInterval = null;
@@ -1126,7 +1133,7 @@
         const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
         const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
 
-        const heatWidthPx = Math.max(10, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
         heatCanvasWrapper.style.width = heatWidthPx + 'px';
         if (heatCanvasContainer.offsetWidth > heatWidthPx) {
             heatCanvasContainer.style.overflowX = 'hidden';
@@ -1144,6 +1151,7 @@
         heatC.lineWidth = 1;
         heatC.strokeStyle = '#000';
 
+        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
         redrawHeatMap();
     }
 
@@ -1268,7 +1276,6 @@
 
     document.getElementById('heatmap-height-line').onclick = function() {
         fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
-        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
         highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
         for (let suffix of ['Selection', 'Diff', 'Active']) {
             for (let prefix of ['left', 'leftMiddle', 'middle', 'rightMiddle', 'right']) {
@@ -1364,7 +1371,7 @@
             const ms = startMs + currentHeatmap.currentTimeBlock() * index;
             const total =  heatmap[index];
             const max = currentHeatmap.max();
-            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort);
+            heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
             const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
             const searchText = searchExecutedCount > index
                 ? "; match: " + found[index] + " (" + Math.floor(found[index] / Math.max(total, 1) * 100) + "%)"
