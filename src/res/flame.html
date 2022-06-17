@@ -535,12 +535,15 @@
             let thisChunk = null;
             let currentTail = 0;
             const tmp = [];
+            let t = -1;
             for (let block of result) {
                 for (let i = 0; i < block.length; i++, currentTail++) {
+                    t++;
                     const tailId = tails[currentTail];
                     if (tailId < this.lz78.length) {
                         const tail = this.lz78[tailId];
                         if (tail.length !== 0 && this.starts.has(tail[0])) {
+                            console.log(t, 'only', tailId);
                             block[i] = tail;
                             continue;
                         }
@@ -550,6 +553,7 @@
                         const chunkId = this.data.nextVarInt();
                         const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
                         const addMethodId = this.data.nextVarInt();
+                        console.log(t, 'chunk', chunkId, addMethodId);
                         thisChunk = prevChunk.copyWithNext(addMethodId);
                         this.lz78.push(thisChunk);
                     }
@@ -563,8 +567,11 @@
                         const addMethodId = this.data.nextVarInt();
                         thisChunk = prevChunk.copyWithNext(addMethodId);
                         this.lz78.push(thisChunk);
+                        console.log(t, 'chunk', chunkId, addMethodId);
 
                         if (this.starts.has(thisChunk[0])) {
+                            console.log(t, 'starts', thisChunk[0]);
+                            console.log(t, 'ends', tailId);
                             const tail = this.lz78[tailId];
                             tmp.push(...tail);
                             block[i] = new Uint32Array(tmp);

@@ -142,8 +142,9 @@ public class SimpleHeatmap extends ResourceProcessor {
                 int className = symbols.index(classNameString);
                 int methodName = symbols.index(methodNameString);
 
-                Method method = new Method(className, methodName, location, type);
-                stackTrace[originalTrace.methods.length - 1 - i] = methodIndex.index(method);
+                int index = originalTrace.methods.length - 1 - i;
+                Method method = new Method(className, methodName, location, type, index == 0);
+                stackTrace[index] = methodIndex.index(method);
             }
             if (alloc) {
                 ClassRef classRef = classRefs.getOrDefault(execution.extra(), UNKNOWN_CLASS_REF);
@@ -152,7 +153,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                 int className = symbols.index(classNameString);
                 int methodName = symbols.index("");
                 byte type = ((AllocationSample)execution).tlabSize == 0 ? (byte) 3 : (byte) 2;
-                stackTrace[originalTrace.methods.length] = methodIndex.index(new Method(className, methodName, 0, type));
+                stackTrace[originalTrace.methods.length] = methodIndex.index(new Method(className, methodName, 0, type, false));
             }
 
             stackTraces.put((long)execution.extra() << 32 | execution.stackTraceId, stackTrace);
@@ -298,7 +299,6 @@ public class SimpleHeatmap extends ResourceProcessor {
         int maxZoom = 3;
         out.writeVar(maxZoom);
 
-        // TODO if start methodId will duplicate in stack trace - it should be renamed
         IndexInt starts = new IndexInt();
         starts.index(context.methods.size() + 1);
 
@@ -316,6 +316,7 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         System.out.println("Start method count: " + startsOut.length);
         for (int method : startsOut) {
+            System.out.println("Start method: " + method);
             out.writeVar(method);
         }
 
@@ -401,17 +402,17 @@ public class SimpleHeatmap extends ResourceProcessor {
         was = out.pos();
         int b = 0;
         for (SampleBlock block : context.blocks) {
-            boolean debug = b == 26;
+            boolean debug = b < 50;
             for (int i = 0; i < block.stacks.size; i++) {
                 if (debug) {
-                    System.out.println("debug " + i);
+                    System.out.println(b + " debug " + i);
                 }
                 LzNode current = root;
                 int stackId = block.stacks.list[i];
                 int[] stack = context.stackTraces[stackId - 1];
                 for (int methodId : stack) {
                     if (debug) {
-                        System.out.println("MethodId " + methodId);
+                        System.out.println(b + " MethodId " + methodId);
                     }
                     int prevId = current.id;
                     current = current.putIfAbsent(methodId, next);
@@ -422,16 +423,17 @@ public class SimpleHeatmap extends ResourceProcessor {
                         out.writeVar(index == -1 ? prevId : index - 1);
                         out.writeVar(methodId);
                         if (debug) {
-                            System.out.println("Dump " + prevId + " " + methodId);
+                            System.out.println(b + " Dump " + (index == -1 ? prevId : index - 1) + " " + methodId);
                         }
                     }
                 }
                 if (debug) {
-                    System.out.println("Ends with " + current.id);
+                    int index = synonyms.index(current.id, -1);
+                    System.out.println(b + " Ends with " + (index == -1 ? current.id : index - 1));
                     System.out.println();
                 }
+                b++;
             }
-            b++;
         }
 
         out.writeVar(0);
@@ -469,16 +471,18 @@ public class SimpleHeatmap extends ResourceProcessor {
         final int methodName;
         final int location;
         final byte type;
+        final boolean start;
 
         Method(int className, int methodName) {
-            this(className, methodName, 0, (byte) 3);
+            this(className, methodName, 0, (byte) 3, true);
         }
 
-        Method(int className, int methodName, int location, byte type) {
+        Method(int className, int methodName, int location, byte type, boolean start) {
             this.className = className;
             this.methodName = methodName;
             this.location = location;
             this.type = type;
+            this.start = start;
         }
 
         @Override
@@ -491,7 +495,8 @@ public class SimpleHeatmap extends ResourceProcessor {
             if (className != method.className) return false;
             if (methodName != method.methodName) return false;
             if (location != method.location) return false;
-            return type == method.type;
+            if (type != method.type) return false;
+            return start == method.start;
         }
 
         @Override
@@ -500,6 +505,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             result = 31 * result + methodName;
             result = 31 * result + location;
             result = 31 * result + (int) type;
+            result = 31 * result + (start ? 1 : 0);
             return result;
         }
     }
