@@ -1,45 +1,160 @@
 <!DOCTYPE html>
 <html lang='en'>
 <head>
-<meta charset='utf-8'>
-<style>
-	body {margin: 0; padding: 4px 8px 24px; background-color: #ffffff; overflow-y: scroll}
-    h1 {margin: 5px 0 0 0; font-size: 18px; font-weight: normal; text-align: center}
-	header {margin: -24px 0 5px 0; line-height: 24px}
-	button {font: 12px sans-serif; cursor: pointer}
-	p {margin: 5px 0 5px 0}
-	a {color: #0366d6}
-	#hl {position: absolute; display: none; overflow: hidden; white-space: nowrap; pointer-events: none; background-color: #ffffe0; outline: 1px solid #ffc000; height: 15px}
-	#hl span {padding: 0 3px 0 3px}
-	#status {overflow: hidden; white-space: nowrap}
-	#match {overflow: hidden; white-space: nowrap; display: none; float: right; text-align: right}
-	#reset {cursor: pointer}
-	#canvas {width: 100%; height: /*height:*/300px}
-/*if heatmap css:*/
-    .selectionPart {position: absolute; display: none; pointer-events: none; box-sizing: border-box;}
-    .sel {background-color: #dada0040}
-    .act {background-color: #00da0040}
-    .dif {background-color: #00dada40}
-    .top {border-top: .1px solid #000}
-    .left {border-left: .1px solid #000}
-    .bottom {border-bottom: .1px solid #000}
-    .right {border-right: .1px solid #000}
+    <meta charset='utf-8'>
+    <style>
+        body {
+            margin: 0;
+            padding: 4px 8px 24px;
+            background-color: #ffffff;
+            overflow-y: scroll
+        }
 
-    #info-tooltip {display: none; position: absolute; top: 100px; right: 32px; width: 204px; border: 1px solid #666666; background: #ffffe0; border-radius: 8px; padding: 4px}
-    #heatmap-height-line, #heatmap-info { text-decoration: #0366d6 dashed underline; cursor: pointer; font-family: monospace}
-    #heatmap-info {cursor: help}
-    #heatmap-info:hover + #info-tooltip {display: block}
+        h1 {
+            margin: 5px 0 0 0;
+            font-size: 18px;
+            font-weight: normal;
+            text-align: center
+        }
 
-    .colortip {width: 100px; box-sizing: border-box; padding: 4px; background: linear-gradient(var(--c1), var(--c2))}
+        header {
+            margin: -24px 0 5px 0;
+            line-height: 24px
+        }
 
-/*end if heatmap css*/
-</style>
+        button {
+            font: 12px sans-serif;
+            cursor: pointer
+        }
+
+        p {
+            margin: 5px 0 5px 0
+        }
+
+        a {
+            color: #0366d6
+        }
+
+        #hl {
+            position: absolute;
+            display: none;
+            overflow: hidden;
+            white-space: nowrap;
+            pointer-events: none;
+            background-color: #ffffe0;
+            outline: 1px solid #ffc000;
+            height: 15px
+        }
+
+        #hl span {
+            padding: 0 3px 0 3px
+        }
+
+        #status {
+            overflow: hidden;
+            white-space: nowrap
+        }
+
+        #match {
+            overflow: hidden;
+            white-space: nowrap;
+            display: none;
+            float: right;
+            text-align: right
+        }
+
+        #reset {
+            cursor: pointer
+        }
+
+        #canvas {
+            width: 100%;
+            height: /*height:*/300px
+        }
+
+        /*if heatmap css:*/
+        .selectionPart {
+            position: absolute;
+            display: none;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+
+        .sel {
+            background-color: #dada0040
+        }
+
+        .act {
+            background-color: #00da0040
+        }
+
+        .dif {
+            background-color: #00dada40
+        }
+
+        .top {
+            border-top: .1px solid #000
+        }
+
+        .left {
+            border-left: .1px solid #000
+        }
+
+        .bottom {
+            border-bottom: .1px solid #000
+        }
+
+        .right {
+            border-right: .1px solid #000
+        }
+
+        #info-tooltip {
+            display: none;
+            position: absolute;
+            top: 100px;
+            right: 32px;
+            width: 204px;
+            border: 1px solid #666666;
+            background: #ffffe0;
+            border-radius: 8px;
+            padding: 4px
+        }
+
+        #heatmap-height-line, #heatmap-info {
+            text-decoration: #0366d6 dashed underline;
+            cursor: pointer;
+            font-family: monospace
+        }
+
+        #heatmap-info {
+            cursor: help
+        }
+
+        #heatmap-info:hover + #info-tooltip {
+            display: block
+        }
+
+        .colortip {
+            width: 100px;
+            box-sizing: border-box;
+            padding: 4px;
+            background: linear-gradient(var(--c1), var(--c2))
+        }
+
+        /*end if heatmap css*/
+    </style>
 </head>
 <body style='font: 12px Verdana, sans-serif'>
 
 /*if heatmap html:*/
 <div style="display: flex">
-    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none"><pre id="heatmap-height-line"> 1 sec : 20 ms </pre></div>
+    <script>
+        'use strict';
+        performance.mark('beforeLoad');
+    </script>
+    <div style="width: 20px; margin-right: 2px; float: left; writing-mode: vertical-rl; transform: scale(-1); text-align: center; user-select: none">
+        <pre id="heatmap-height-line"> 1 sec : 20 ms </pre>
+    </div>
 
     <div id='heatmap-canvas-container' style="width: 100%; position: relative" autofocus>
         <div id='heatmap-canvas-wrapper' style='overflow: hidden; width: 100%'>
@@ -65,7 +180,8 @@
         <div id='rightMiddleDiff' class='selectionPart left'><span></span></div>
     </div>
 
-    <div id="heatmap-info" style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
+    <div id="heatmap-info"
+         style="width: 20px; margin-right: 2px; writing-mode: vertical-rl; text-align: center; user-select: none">
         <pre> Info </pre>
     </div>
     <div id="info-tooltip">
@@ -94,208 +210,222 @@
         </div>
     </div>
 </div>
-<div id="executionsHeatmap" style="display:none">/*executionsHeatmap:*/</div>
-<div id="globalStacks" style="display:none">/*globalStacks:*/</div>
-<div id="methods" style="display:none">/*methods:*/</div>
-<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
+<div style="display:none">
+    <pre id="executionsHeatmap">/*executionsHeatmap:*/</pre>
+</div>
+<div style="display:none">
+    <pre id="methods">/*methods:*/</pre>
+</div>
+<span style="position:fixed; bottom: 0; right:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-left: 1px solid #ffc000; border-top-left-radius: 4px;"><span
+        id="produced">Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>&nbsp;</span><span
+        id='match' style="display: none">Matched: <span id='matchval'></span>&nbsp;<span id='reset' title='Clear'>&#x274c;</span></span></span>
 /*end if heatmap html*/
 <h1 id="title">/*title:*/</h1>
 /*if flamegraph html:*/
-<header style='text-align: left'><button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;</button></header>
-<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a></header>
+<header style='text-align: left'>
+    <button id='reverse' title='Reverse'>&#x1f53b;</button>&nbsp;&nbsp;<button id='search' title='Search'>&#x1f50d;
+</button>
+</header>
+<header style='text-align: right'>Produced by <a href='https://github.com/jvm-profiling-tools/async-profiler'>async-profiler</a>
+</header>
 <!-- TODO return match here -->
 /*end if flamegraph html*/
 <canvas id='canvas'></canvas>
 <div id='hl'><span></span></div>
 
-<span id='status' style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
+<span id='status'
+      style="position:fixed; bottom: 0; left:0; padding: 2px 4px; background-color: #ffffe0; border-top: 1px solid #ffc000; border-right: 1px solid #ffc000; border-top-right-radius: 4px; display: none">&nbsp;</span>
 <script>
-	// Copyright 2020 Andrei Pangin
-	// Licensed under the Apache License, Version 2.0.
-	'use strict';
-	let root, rootLevel, px, pattern;
-	let reverse = /*reverse:*/false;
-	const levels = Array(/*depth:*/0);
-	for (let h = 0; h < levels.length; h++) {
-		levels[h] = [];
-	}
+    // Copyright 2020 Andrei Pangin
+    // Licensed under the Apache License, Version 2.0.
+    'use strict';
+    performance.mark('beforeScript');
+    let root, rootLevel, px, pattern;
+    let reverse = /*reverse:*/false;
+    const levels = Array(/*depth:*/0);
+    for (let h = 0; h < levels.length; h++) {
+        levels[h] = [];
+    }
 
-	const canvas = document.getElementById('canvas');
-	let c = canvas.getContext('2d');
-	const hl = document.getElementById('hl');
-	const status = document.getElementById('status');
+    const canvas = document.getElementById('canvas');
+    let c = canvas.getContext('2d');
+    const hl = document.getElementById('hl');
+    const status = document.getElementById('status');
 
-	const canvasWidth = canvas.offsetWidth;
-	let canvasHeight = canvas.offsetHeight;
-	canvas.style.width = canvasWidth + 'px';
-	canvas.width = canvasWidth * (devicePixelRatio || 1);
-	canvas.height = canvasHeight * (devicePixelRatio || 1);
-	if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
-	c.font = document.body.style.font;
+    const canvasWidth = canvas.offsetWidth;
+    let canvasHeight = canvas.offsetHeight;
+    canvas.style.width = canvasWidth + 'px';
+    canvas.width = canvasWidth * (devicePixelRatio || 1);
+    canvas.height = canvasHeight * (devicePixelRatio || 1);
+    if (devicePixelRatio) c.scale(devicePixelRatio, devicePixelRatio);
+    c.font = document.body.style.font;
 
     const search = typeof searchIterative === 'function' ? searchIterative : searchSimple;
     const init = typeof renderHeatmap === 'function' ? renderHeatmap : render;
 
-	const palette = [
-		[0xb2e1b2, 20, 20, 20],
-		[0x50e150, 30, 30, 30],
-		[0x50cccc, 30, 30, 30],
-		[0xe15a5a, 30, 40, 40],
-		[0xc8c83c, 30, 30, 10],
-		[0xe17d00, 30, 30,  0],
-		[0xcce880, 20, 20, 20],
-	];
+    const palette = [
+        [0xb2e1b2, 20, 20, 20],
+        [0x50e150, 30, 30, 30],
+        [0x50cccc, 30, 30, 30],
+        [0xe15a5a, 30, 40, 40],
+        [0xc8c83c, 30, 30, 10],
+        [0xe17d00, 30, 30, 0],
+        [0xcce880, 20, 20, 20],
+    ];
 
-	function getColor(p) {
-		const v = Math.random();
-		return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
-	}
+    function getColor(p) {
+        const v = Math.random();
+        return '#' + (p[0] + ((p[1] * v) << 16 | (p[2] * v) << 8 | (p[3] * v))).toString(16);
+    }
 
-	function f(level, left, width, type, title, inln, c1, int) {
-		levels[level].push({left: left, width: width, color: getColor(palette[type]), title: title,
-			details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
-		});
-	}
+    function f(level, left, width, type, title, inln, c1, int) {
+        levels[level].push({
+            left: left, width: width, color: getColor(palette[type]), title: title,
+            details: (int ? ', int=' + int : '') + (c1 ? ', c1=' + c1 : '') + (inln ? ', inln=' + inln : '')
+        });
+    }
 
-	function samples(n) {
-		return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
-	}
+    function samples(n) {
+        return n === 1 ? '1 sample' : n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' samples';
+    }
 
-	function pct(a, b) {
-		return a >= b ? '100' : (100 * a / b).toFixed(2);
-	}
+    function pct(a, b) {
+        return a >= b ? '100' : (100 * a / b).toFixed(2);
+    }
 
-	function findFrame(frames, x) {
-		let left = 0;
-		let right = frames.length - 1;
+    function findFrame(frames, x) {
+        let left = 0;
+        let right = frames.length - 1;
 
-		while (left <= right) {
-			const mid = (left + right) >>> 1;
-			const f = frames[mid];
+        while (left <= right) {
+            const mid = (left + right) >>> 1;
+            const f = frames[mid];
 
-			if (f.left > x) {
-				right = mid - 1;
-			} else if (f.left + f.width <= x) {
-				left = mid + 1;
-			} else {
-				return f;
-			}
-		}
+            if (f.left > x) {
+                right = mid - 1;
+            } else if (f.left + f.width <= x) {
+                left = mid + 1;
+            } else {
+                return f;
+            }
+        }
 
-		if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
-		if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
+        if (frames[left] && (frames[left].left - x) * px < 0.5) return frames[left];
+        if (frames[right] && (x - (frames[right].left + frames[right].width)) * px < 0.5) return frames[right];
 
-		return null;
-	}
+        return null;
+    }
 
     const marked = [];
 
     function render(newRoot, newLevel, minLevel) {
         minLevel = minLevel || 0;
         if (root && minLevel === 0) {
-			c.fillStyle = '#ffffff';
-			c.fillRect(0, 0, canvasWidth, canvasHeight);
-		}
-
-		root = newRoot || levels[0][0];
-		rootLevel = newLevel || 0;
-		px = canvasWidth / root.width;
-
-		const x0 = root.left;
-		const x1 = x0 + root.width;
-
-		if (minLevel === 0) {
-		    marked.length = 0;
+            c.fillStyle = '#ffffff';
+            c.fillRect(0, 0, canvasWidth, canvasHeight);
         }
 
-		function mark(f) {
-			return marked[f.left] >= f.width || (marked[f.left] = f.width);
-		}
+        root = newRoot || levels[0][0];
+        rootLevel = newLevel || 0;
+        px = canvasWidth / root.width;
 
-		function totalMarked() {
-			let total = 0;
-			let left = 0;
-			Object.keys(marked).sort(function(a, b) { return a - b; }).forEach(function(x) {
-				if (+x >= left) {
-					total += marked[x];
-					left = +x + marked[x];
-				}
-			});
-			return total;
-		}
+        const x0 = root.left;
+        const x1 = x0 + root.width;
 
-		function drawFrame(f, y, alpha) {
-			if (f.left < x1 && f.left + f.width > x0) {
+        if (minLevel === 0) {
+            marked.length = 0;
+        }
+
+        function mark(f) {
+            return marked[f.left] >= f.width || (marked[f.left] = f.width);
+        }
+
+        function totalMarked() {
+            let total = 0;
+            let left = 0;
+            Object.keys(marked).sort(function (a, b) {
+                return a - b;
+            }).forEach(function (x) {
+                if (+x >= left) {
+                    total += marked[x];
+                    left = +x + marked[x];
+                }
+            });
+            return total;
+        }
+
+        function drawFrame(f, y, alpha) {
+            if (f.left < x1 && f.left + f.width > x0) {
                 let match = pattern && pattern.test(f.title) && mark(f);
                 const fw = f.width * px;
                 if (fw < 0.1) {
                     return;
                 }
                 c.fillStyle = match ? '#ee00ee' : f.color;
-				c.fillRect((f.left - x0) * px, y, fw, 15);
+                c.fillRect((f.left - x0) * px, y, fw, 15);
 
-				if (fw >= 21) {
-					const chars = Math.floor(fw / 7);
-					const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
-					c.fillStyle = '#000000';
-					c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
-				}
+                if (fw >= 21) {
+                    const chars = Math.floor(fw / 7);
+                    const title = f.title.length <= chars ? f.title : f.title.substring(0, chars - 2) + '..';
+                    c.fillStyle = '#000000';
+                    c.fillText(title, Math.max(f.left - x0, 0) * px + 3, y + 12, fw - 6);
+                }
 
-				if (alpha) {
-					c.fillStyle = 'rgba(255, 255, 255, 0.5)';
-					c.fillRect((f.left - x0) * px, y, fw, 15);
-				}
-			}
-		}
+                if (alpha) {
+                    c.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    c.fillRect((f.left - x0) * px, y, fw, 15);
+                }
+            }
+        }
 
-		for (let h = minLevel; h < levels.length; h++) {
-			const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
-			const frames = levels[h];
-			for (let i = 0; i < frames.length; i++) {
-				drawFrame(frames[i], y, h < rootLevel);
-			}
-		}
+        for (let h = minLevel; h < levels.length; h++) {
+            const y = reverse ? h * 16 : canvasHeight - (h + 1) * 16;
+            const frames = levels[h];
+            for (let i = 0; i < frames.length; i++) {
+                drawFrame(frames[i], y, h < rootLevel);
+            }
+        }
 
-		return totalMarked();
-	}
+        return totalMarked();
+    }
 
-	canvas.onmousemove = function() {
-		const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
-		if (h >= 0 && h < levels.length) {
-			const f = findFrame(levels[h], event.offsetX / px + root.left);
-			if (f) {
-				hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
-				hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
-				hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
-				hl.firstChild.textContent = f.title;
-				hl.style.display = 'block';
-				let details = f.details || '';
-				canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
-				canvas.style.cursor = 'pointer';
-				canvas.onclick = function() {
-					if (f !== root) {
-						render(f, h);
-						canvas.onmousemove();
-					}
-				};
-				status.textContent = 'Function: ' + canvas.title;
+    canvas.onmousemove = function () {
+        const h = Math.floor((reverse ? event.offsetY : (canvasHeight - event.offsetY)) / 16);
+        if (h >= 0 && h < levels.length) {
+            const f = findFrame(levels[h], event.offsetX / px + root.left);
+            if (f) {
+                hl.style.left = (Math.max(f.left - root.left, 0) * px + canvas.offsetLeft) + 'px';
+                hl.style.width = (Math.min(f.width, root.width) * px) + 'px';
+                hl.style.top = ((reverse ? h * 16 : canvasHeight - (h + 1) * 16) + canvas.offsetTop) + 'px';
+                hl.firstChild.textContent = f.title;
+                hl.style.display = 'block';
+                let details = f.details || '';
+                canvas.title = f.title + '\n(' + samples(f.width) + details + ', ' + pct(f.width, levels[0][0].width) + '%)';
+                canvas.style.cursor = 'pointer';
+                canvas.onclick = function () {
+                    if (f !== root) {
+                        render(f, h);
+                        canvas.onmousemove();
+                    }
+                };
+                status.textContent = 'Function: ' + canvas.title;
                 status.style.display = 'inline';
-				return;
-			}
-		}
-		canvas.onmouseout();
-	}
+                return;
+            }
+        }
+        canvas.onmouseout();
+    }
 
-	canvas.onmouseout = function() {
-		hl.style.display = 'none';
-		status.textContent = '\xa0';
+    canvas.onmouseout = function () {
+        hl.style.display = 'none';
+        status.textContent = '\xa0';
         status.style.display = 'none';
-		canvas.title = '';
-		canvas.style.cursor = '';
-		canvas.onclick = '';
-	}
+        canvas.title = '';
+        canvas.style.cursor = '';
+        canvas.onclick = '';
+    }
 
-    window.onkeydown = function() {
+    window.onkeydown = function () {
         if (event.ctrlKey && event.keyCode === 70) {
             event.preventDefault();
             search(true);
@@ -304,13 +434,13 @@
         }
     }
 
-    document.getElementById('reset').onclick = function() {
+    document.getElementById('reset').onclick = function () {
         search(false);
     }
 
-/*if flamegraph js:*/
+    /*if flamegraph js:*/
 
-    document.getElementById('search').onclick = function() {
+    document.getElementById('search').onclick = function () {
         search(true);
     }
 
@@ -325,267 +455,274 @@
         document.getElementById('match').style.display = r ? 'inherit' : 'none';
     }
 
-	document.getElementById('reverse').onclick = function() {
-		reverse = !reverse;
-		render();
-	}
-/*end if flamegraph js*/
-/*if heatmap js:*/
+    document.getElementById('reverse').onclick = function () {
+        reverse = !reverse;
+        render();
+    }
+    /*end if flamegraph js*/
+    /*if heatmap js:*/
     class DataBuffer {
         data;
         pos = 0;
+
         constructor(encodedData) {
             this.data = encodedData;
         }
 
         nextVarInt() {
             let res = 0;
-            let shift = 0;
+            let shift = 1;
             let b;
             do {
                 b = this.byteAt(this.pos++);
-                res |= (b & 0x1F) << shift
-                shift += 5;
-            } while (b >= 0x20)
+                res += (b % 60) * shift;
+                shift *= 60;
+            } while (b >= 60)
             return res;
+        }
+
+        nextInt6() {
+            return this.byteAt(this.pos++);
         }
 
         byteAt(pos) {
-            return this.data.charCodeAt(pos) - 63;
-        }
-
-        int30(pos) {
-            return (this.byteAt(pos++) << 0)
-                | (this.byteAt(pos++) << 6)
-                | (this.byteAt(pos++) << 12)
-                | (this.byteAt(pos++) << 18)
-                | (this.byteAt(pos) << 24);
+            const c = this.data.charCodeAt(pos);
+            switch (c) {
+                case 127:
+                    return 0;
+                case 126:
+                    return 13;
+                case 125:
+                    return 38;
+                case 124:
+                    return 60;
+                case 123:
+                    return 62;
+            }
+            return c;
         }
 
         int36(pos) {
-            return (this.byteAt(pos++) << 0)
-                | (this.byteAt(pos++) << 6)
-                | (this.byteAt(pos++) << 12)
-                | (this.byteAt(pos++) << 18)
-                | (this.byteAt(pos++) << 24)
-                | (this.byteAt(pos++) << 30);
+            let p = pos * 6;
+            if (p < 0) {
+                p += this.data.length;
+            }
+            return (this.byteAt(p++) << 0)
+                | (this.byteAt(p++) << 6)
+                | (this.byteAt(p++) << 12)
+                | (this.byteAt(p++) << 18)
+                | (this.byteAt(p++) << 24)
+                | (this.byteAt(p) << 30);   // fixme doesnt work, use int30
         }
 
-        varInt(pos) {
-            let res = 0;
-            let shift = 0;
-            let b;
+    }
+
+    const hist = new Map();
+
+    function histogram(name, id) {
+        let m = hist.get(name);
+        if (m === undefined) {
+            m = new Map();
+            hist.set(name, m);
+        }
+        m.set(id, (m.get(id) || 0) + 1);
+    }
+
+    function printHistogram() {
+        hist.forEach((v, k) => {
+            console.log(k, [...v].sort((a, b) => b[1] - a[1]));
+        })
+    }
+
+    function decodeExecutions(data) {
+        const samplesCount = data.int36(-1);
+        const lz78RecordsCount = data.int36(-2);
+        const chunksCount = data.int36(-3);
+        const storageSize = data.int36(-4);
+        const startMethodsCount = data.int36(-5);
+        const blocksCount = data.int36(-6);
+        const synonymsCount = data.int36(-7);
+        const frequentBlocksCount = data.int36(-8);
+
+        const frequentBlocks = new Set();
+        for (let i = 0; i < frequentBlocksCount; i++) {
+            frequentBlocks.add(data.nextVarInt());
+        }
+        const starts = new Set();
+        for (let i = 0; i < startMethodsCount; i++) {
+            starts.add(data.nextVarInt());
+        }
+
+        // NOTE: All dynamic allocations should be done before this line
+        const buffer = new ArrayBuffer((4 + 4 + 4 + 2) * lz78RecordsCount + 4 * chunksCount);
+        const lz78RootMethods = new Uint32Array(buffer, 0, lz78RecordsCount);   // FIXME NOTE!!! methods in most cases takes only 2 bytes!
+        const lz78CurrentMethods = new Uint32Array(buffer, lz78RecordsCount * 4, lz78RecordsCount); // FIXME NOTE!!! methods in most cases takes only 2 bytes!
+        const lz78Parents = new Uint32Array(buffer, lz78RecordsCount * 8, lz78RecordsCount);    // FIXME NOTE!!! parents in most cases takes only 3 bytes!
+        const chunksOrder = new Uint32Array(buffer, lz78RecordsCount * 12, chunksCount);    // FIXME NOTE!!! parents in most cases takes only 3 bytes!
+        const lz78Sizes = new Uint16Array(buffer, lz78RecordsCount * 12 + chunksCount * 4, lz78RecordsCount);
+
+        const returnBuffer = new ArrayBuffer(4 * samplesCount + 4 * chunksCount + 4 * storageSize + 2 * blocksCount);
+        const sampleToChunkEnds = new Uint32Array(returnBuffer, 0, samplesCount);  // FIXME NOTE!!! parents in most cases takes only 3 bytes!
+        const chunksToStorage = new Uint32Array(returnBuffer, 4 * samplesCount, chunksCount);  // FIXME NOTE!!! parents in most cases takes only 3 bytes!
+        const storage = new Uint32Array(returnBuffer, 4 * samplesCount + 4 * chunksCount, storageSize);   // FIXME NOTE!!! methods in most cases takes only 2 bytes!
+        const counts = new Int16Array(returnBuffer, 4 * samplesCount + 4 * chunksCount + 4 * storageSize, blocksCount);    // FIXME NOTE!!! methods in most cases takes only 1 byte!
+
+        counts.fill(-1);
+        const layersCount = data.nextVarInt();
+        for (let i = 0; i < layersCount; i++) {
+            const size = data.nextVarInt();
+            const bitsCount = data.nextVarInt();
+            let word = 0;
+            for (let j = 0, p = 0; j < bitsCount; j++) {
+                while (counts[p] >= 0) {
+                    p++;
+                }
+                const bitIndex = j % 6;
+                if (bitIndex === 0) {
+                    word = data.nextInt6();
+                }
+                const bit = word & (1 << ( 5 - bitIndex));  //fixme
+                if (bit !== 0) {
+                    counts[p] = size;
+                } else {
+                    p++;
+                }
+            }
+        }
+
+        const synonyms = new Uint32Array(synonymsCount);    // no need
+        for (let i = 0; i < synonymsCount; i++) {
+            synonyms[i] = data.nextVarInt();
+        }
+
+        let lz78LastRecordIndex = 0;
+
+        let maxCount = 0;
+        let totalCount = 0;
+        for (let c = 0; c < counts.length; c++) {
+            const count = Math.max(0, counts[c]);
+            maxCount = Math.max(maxCount, count);
+            totalCount += count;
+            counts[c] = totalCount;
+            for (let i = 0; i < count; i++) {
+                const prevChunkId = data.nextVarInt();
+                const addMethodId = data.nextVarInt();
+
+                const lzPrevRecordId = (prevChunkId < synonymsCount ? synonyms[prevChunkId] : prevChunkId) - synonymsCount;
+
+                lz78LastRecordIndex++
+                lz78RootMethods[lz78LastRecordIndex] = lz78RootMethods[lzPrevRecordId] || addMethodId;
+                lz78CurrentMethods[lz78LastRecordIndex] = addMethodId;
+                lz78Parents[lz78LastRecordIndex] = lzPrevRecordId;
+                lz78Sizes[lz78LastRecordIndex] = lz78Sizes[lzPrevRecordId] + 1;
+            }
+        }
+
+        let sample = 0;
+        for (let chunk = 0; chunk < chunksCount; chunk++) {
+            const chunkId = data.nextVarInt();
+            chunksToStorage[chunk] = chunkId;
+            const rootMethod = lz78RootMethods[chunkId];
+            console.log(chunkId, rootMethod);
+            if (starts.has(rootMethod)) {
+                if (sample !== 0) {
+                    sampleToChunkEnds[sample - 1] = chunk;
+                }
+                sample++;
+            }
+        }
+        sampleToChunkEnds[sample - 1] = chunksCount;
+
+        for (let i = 0; i < chunksCount; i++) {
+            chunksOrder[i] = i;
+        }
+
+        chunksOrder.sort((k1, k2) => lz78Sizes[k2] - lz78Sizes[k1]);
+
+        const refs = lz78RootMethods;    // no need for them anymore
+        refs.fill(0);
+
+        const parents = lz78Parents;
+
+        refs[0] = -1;
+        let pos = 0;
+        for (let chunkIndex of chunksOrder) {
+            let chunk = chunksToStorage[chunkIndex];
+            if (refs[chunk] !== 0) {
+                chunksToStorage[chunkIndex] = refs[chunk];
+                continue;
+            }
+
+            chunksToStorage[chunkIndex] = pos; // reuse space
             do {
-                b = this.byteAt(pos++);
-                res |= (b & 0x1F) << shift
-                shift += 5;
-            } while (b >= 0x20)
-            return res;
+                refs[chunk] = pos;
+                storage[pos++] = lz78CurrentMethods[chunk];
+                chunk = parents[chunk];
+            } while (chunk !== 0 && refs[chunk] === 0);
+
+            while (chunk !== 0) {
+                storage[pos++] = lz78CurrentMethods[chunk];
+                chunk = parents[chunk];
+            }
+            storage[pos++] = 0;
         }
 
+        return {
+            sampleToChunkEnds: sampleToChunkEnds,
+            chunksToStorage: chunksToStorage,
+            storage: storage,
+            counts: counts,
+            frequentBlocks: frequentBlocks,
+            maxCount: maxCount
+        };
     }
 
     class HeatmapCollection extends DataBuffer {
 
-        maxZoom;
-        blocks;
-        zoomToCounts;
-        zoomToMaxes;
+        minimalTimeSquare = 20; // hardcoded for now
+        squaresBetweenMarks = 20; // hardcoded forever)
+
         zoom;
+        timeSquareScale;
+        timeSquareRowsCount;
+
+        blocksData;
 
         constructor(encodedData) {
             super(encodedData);
 
-            this.maxZoom = this.nextVarInt();   // fixme
-            this.maxZoom = 3;
-
-            const startMethodsCount = this.nextVarInt();
-            const starts = new Set();
-            for (let i = 0; i < startMethodsCount; i++) {
-                starts.add(this.nextVarInt());
-            }
-
-            const lz = new Lz78Data(this, starts);
-
-            let max = 1;
-
-            let prevByte = -1;
-            const blocksCount = this.nextVarInt();
-            let counts = new Uint32Array(blocksCount);
-            for (let i = 0; i < blocksCount; i++) {
-                let v = 0;
-                let p = 0;
-                let hasMore = false;
-                do {
-                    if (prevByte === -1) {
-                        prevByte = this.byteAt(this.pos++);
-                        hasMore = (prevByte >>> 5) === 1;
-                        v |= ((prevByte >>> 3) & 3) << p;
-                        prevByte &= 7;
-                    } else {
-                        hasMore = (prevByte >>> 2) === 1;
-                        v |= (prevByte & 3) << p;
-                        prevByte = -1;
-                    }
-                    p += 2;
-                } while (hasMore);
-                counts[i] = v;
-                max = Math.max(max, v);
-            }
-
-            this.blocks = lz.decode(counts);
-
-            this.zoomToCounts = new Array(this.maxZoom);
-            this.zoomToMaxes = new Array(this.maxZoom);
-
-            this.zoomToCounts[0] = counts;
-            this.zoomToMaxes[0] = max;
-
-            for (let z = 1; z < zoomToGroupSize.length; z++) {
-                const size = zoomToGroupSize[z] / zoomToGroupSize[z - 1];
-                const nextCounts = new Uint32Array(Math.ceil(counts.length / size));
-                for (let i = 0; i < counts.length; i++) {
-                    const index = (i / size) | 0;
-                    nextCounts[index] += counts[i];
-                    max = Math.max(max, nextCounts[index]);
-                }
-                this.zoomToCounts[z] = counts = nextCounts;
-                this.zoomToMaxes[z] = max;
-            }
-
-            this.data = null;
+            this.blocksData = decodeExecutions(this);
+            this.data = undefined;
         }
 
-        setZoom(zoom) {
-            this.zoom = zoom;
-        }
-
-        heatmap() {
-            return this.zoomToCounts[this.zoom];
-        }
-
-        max() {
-            return this.zoomToMaxes[this.zoom];
-        }
-
-        currentTimeBlock() {
-            // FIXME 20 is hardcoded
-            return 20 * zoomToGroupSize[this.zoom];
+        currentTimeSquareMs() {
+            return this.minimalTimeSquare * this.timeSquareScale;
         }
 
         startBlock() {
-            const blockMs = this.currentTimeBlock();
-            const timeBlockMs = blockMs * heatHeight * 20;
-            return Math.floor(startMs % timeBlockMs / blockMs);
+            const timeSquareMs = this.currentTimeSquareMs();
+            const timeBlockMs = timeSquareMs * this.timeSquareRowsCount * this.squaresBetweenMarks;
+            return Math.floor(startMs % timeBlockMs / timeSquareMs);
         }
 
         count() {
-            return Math.ceil((this.heatmap().length + this.startBlock()) / 20 / heatHeight) * 20 * heatHeight;
+            const timeSquaresCountInMarkBlock = this.timeSquareRowsCount * this.squaresBetweenMarks;
+            const scaledTimeSquaresCount = this.blocksData.counts.length / this.timeSquareScale;
+            return Math.ceil(scaledTimeSquaresCount / timeSquaresCountInMarkBlock) * timeSquaresCountInMarkBlock;
+        }
+
+        setZoom(z) {
+            this.zoom = z;
+            this.timeSquareScale = zoomToGroupSize[z];
+            this.timeSquareRowsCount = zoomToHeight[z];
+        }
+
+        max() {
+            return this.blocksData.maxCount * this.timeSquareScale;
         }
 
     }
 
-    class LzChunk extends Uint32Array {
-        constructor(size) {
-            super(size);
-        }
-
-        copyWithNext(element) {
-            let result = new LzChunk(this.length + 1);
-            result.set(this);
-            result[this.length] = element;
-            return result;
-        }
-    }
-
-    class Lz78Data {
-        data;
-        starts;
-        lz78;
-
-        tmp = [];
-        prevSubTreeId = -1;
-
-        constructor(data, starts) {
-            this.data = data;
-            this.starts = starts;
-
-            this.lz78 = [new LzChunk(0)];
-        }
-
-        decode(counts) {
-            const synonymsCount = this.data.nextVarInt();
-            const synonyms = new Uint32Array(synonymsCount);
-            for (let i = 0; i < synonymsCount; i++) {
-                synonyms[i] = this.data.nextVarInt();
-            }
-
-            const tailsCount = this.data.nextVarInt();
-            const tails = new Uint32Array(tailsCount);
-            for (let i = 0; i < tailsCount; i++) {
-                const tail = this.data.nextVarInt();
-                tails[i] = (tail < synonyms.length ? synonyms[tail] : tail) - synonymsCount;
-            }
-
-            const result = new Array(counts.length);
-            for (let i = 0; i < counts.length; i++) {
-                result[i] = new Array(counts[i]);
-            }
-
-            let thisChunk = null;
-            let currentTail = 0;
-            const tmp = [];
-            let t = -1;
-            for (let block of result) {
-                for (let i = 0; i < block.length; i++, currentTail++) {
-                    t++;
-                    const tailId = tails[currentTail];
-                    if (tailId < this.lz78.length) {
-                        const tail = this.lz78[tailId];
-                        if (tail.length !== 0 && this.starts.has(tail[0])) {
-                            console.log(t, 'only', tailId);
-                            block[i] = tail;
-                            continue;
-                        }
-                    }
-
-                    if (thisChunk === null) {
-                        const chunkId = this.data.nextVarInt();
-                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
-                        const addMethodId = this.data.nextVarInt();
-                        console.log(t, 'chunk', chunkId, addMethodId);
-                        thisChunk = prevChunk.copyWithNext(addMethodId);
-                        this.lz78.push(thisChunk);
-                    }
-
-                    tmp.length = 0;
-                    tmp.push(...thisChunk); // FIXME it is ok to push as is, or even as lz78 index
-
-                    while (true) {
-                        const chunkId = this.data.nextVarInt();
-                        const prevChunk = this.lz78[(chunkId < synonyms.length ? synonyms[chunkId] : chunkId) - synonymsCount];
-                        const addMethodId = this.data.nextVarInt();
-                        thisChunk = prevChunk.copyWithNext(addMethodId);
-                        this.lz78.push(thisChunk);
-                        console.log(t, 'chunk', chunkId, addMethodId);
-
-                        if (this.starts.has(thisChunk[0])) {
-                            console.log(t, 'starts', thisChunk[0]);
-                            console.log(t, 'ends', tailId);
-                            const tail = this.lz78[tailId];
-                            tmp.push(...tail);
-                            block[i] = new Uint32Array(tmp);
-                            break;
-                        } else {
-                            tmp.push(...thisChunk);
-                        }
-                    }
-                }
-            }
-
-            return result;
-        }
-    }
 
     class Queue {
         data = new Array(1024);
@@ -653,8 +790,8 @@
     const canvasScrollPadding = 200;
     let canvasTimeHeight = 12;
     let canvasTimeHeightPx = 12;
-    let ticksPerSecond = /*ticksPerSecond:*/1;
-    let startMs = /*startMs:*/0;
+    let ticksPerSecond = /*ticksPerSecond:*/1;  // TODO put into data
+    let startMs = /*startMs:*/0;    // TODO put into data
 
     const zoomToGroupSize = [
         1,              // 20 ms
@@ -662,7 +799,18 @@
         50 * 5,         // 5 s
         50 * 60         // 1 m
     ];
-    const zoomToHeight = [50, 60, 60, 60]
+    const zoomToHeight = [
+        50,
+        60,
+        60,
+        60
+    ];
+    const zoomToText = [
+        ' 1 sec : 20 ms ',
+        ' 1 min : 1 sec ',
+        ' 5 min : 5 sec ',
+        ' 1 hr  : 1 min '
+    ];
 
     let methods = new DataBuffer(claimHtml("methods"));
     let executionsHeatmap = new HeatmapCollection(claimHtml("executionsHeatmap"));
@@ -670,8 +818,6 @@
 
     let currentHeatmap = executionsHeatmap;
     let currentHeatmapType = 'executions';
-
-    let heatHeight = 60;
 
     let heatLastSample = -1;
     let heatActiveSample1 = -1;
@@ -733,13 +879,15 @@
 
         methodIndex--;
 
-        let methodAndClass = methods.int36(methodIndex * 12);
-        let locationAndType = methods.int36(methodIndex * 12 + 6)
+        // FIXME wrong sizes, use int18
+        let methodAndClass = methods.int36(methodIndex * 2);
+        let locationAndType = methods.int36(methodIndex * 2 + 1)
         let className = (methodAndClass & 0x3FFFF) - 1;
         let methodName = (methodAndClass >>> 18) - 1;
 
         out.className = cpool[className];
         out.methodName = cpool[methodName];
+        // fixme use 16 bits for location parts + 2 for type on both sides, after that, use int18
         out.location = locationAndType >>> 4;
         out.type = locationAndType & 15;
     }
@@ -778,7 +926,7 @@
 
         bgTasks.push({id: id, f: iteration, a: afterFrame});
         if (bgTasks.length === 1) {
-            bgInterval = setInterval(function() {
+            bgInterval = setInterval(function () {
                 let start = performance.now();
                 if (start <= cooldownTime) {
                     return;
@@ -801,7 +949,7 @@
                         nextTask = 0;
                         overflow = true;
                     }
-                } while(performance.now() - start < 8);
+                } while (performance.now() - start < 8);
 
                 for (let q = 0; q < overflow ? bgTasks.length : nextTask; q++) {
                     bgTasks[q].a();
@@ -811,110 +959,251 @@
     }
 
     function prepareFrames(from, to) {
-        let mul = zoomToGroupSize[currentHeatmap.zoom];
-        from *= mul;
-        to = (to + 1) * mul - 1;
-        if (to >= currentHeatmap.blocks.length) {
-            to = currentHeatmap.blocks.length - 1;
+        const counts = currentHeatmap.blocksData.counts;
+        const countBeforeFirstBlock = counts[from - 1] || 0;
+        const countAtLastBlock = counts[to] || counts[counts.length - 1];
+        const count = countAtLastBlock - countBeforeFirstBlock;
+
+        const framesBuffer = new Uint32Array(100500);   // todo prealloc it!
+        let p = 0;
+        framesBuffer[p++] = 1;
+
+        framesBuffer[p++] = 0;
+        framesBuffer[p++] = 0;
+        framesBuffer[p++] = count;
+
+        for (let sampleIndex = countBeforeFirstBlock; sampleIndex < countAtLastBlock; sampleIndex++) {
+            const chunkPos = currentHeatmap.blocksData.sampleToChunkEnds[sampleIndex - 1] || 0;
+            const chunkEnd = currentHeatmap.blocksData.sampleToChunkEnds[sampleIndex] || currentHeatmap.blocksData.chunksToStorage.length;
+            const storagePos = currentHeatmap.blocksData.chunksToStorage[chunkPos];
+
+            framesBuffer[p++] = chunkPos;
+            framesBuffer[p++] = chunkEnd;
+            framesBuffer[p++] = storagePos;
         }
 
-        const frames = new Queue();
-        const root = new Map();
-        root.c = 0;
-        root.m = -1;
-        root.x = 0;
-        const roots = [root];
-        let levelsCount = 1;
-
-        for (let pos = from; pos <= to; pos++) {
-            const block = currentHeatmap.blocks[pos];
-
-            root.c += block.length;
-
-            for (let stack of block) {
-                levelsCount = Math.max(stack.length + 1, levelsCount);
-
-                frames.push(root);
-                frames.push(stack);
-            }
-        }
-
-        return [frames, roots, levelsCount]
+        return framesBuffer;
     }
 
-    function nextFrames(frames, level) {
-        frames.push(null);  // end stacks marker
-
-        let nowFrame = null;
-
+    function sort(array, start, end, values, bit) {
         while (true) {
-            const frame = frames.shift();
-            if (frame === null) {   // end stack marker
-                break;
+            switch (end - start) {
+                case 0:
+                case 1:
+                    return;
+                case 2: {
+                    let a = array[start];
+                    let b = array[start + 1];
+                    if (values[a] < values[b]) {
+                        array[start] = b;
+                        array[start + 1] = a;
+                    }
+                    return;
+                }
             }
 
-            const stack = frames.shift();
-            if (level >= stack.length) {
+            let left = start;
+            let right = end;
+
+            while (true) {
+                while (left < right) {
+                    let v = values[array[left]];
+                    if ((v & bit) !== 0) {
+                        left++;
+                    } else {
+                        break;
+                    }
+                }
+                while (left < right) {
+                    let v = values[array[right - 1]];
+                    if ((v & bit) === 0) {
+                        right--;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (left < right) {
+                    right--;
+                    let l = array[left];
+                    array[left] = array[right];
+                    array[right] = l;
+                    left++;
+                } else {
+                    bit >>= 1;
+                    if (bit === 0) {
+                        return;
+                    }
+                    if (end - left > right - start) {
+                        if (right - start > 1) {
+                            sort(array, start, right, values, bit);
+                        }
+                        start = left;
+                    } else {
+                        if (end - left > 1) {
+                            sort(array, left, end, values, bit);
+                        }
+                        end = right;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    function nextFrames(frames, nextFrames, methodsBuffer) {
+        let fp = 0;
+        let np = 1; // for size
+
+        const framesCount = frames[fp++];
+        let nextFramesCount = 0;
+        const roots = new Array(framesCount);   // TODO remove
+
+        for (let frame = 0; frame < framesCount; frame++) {
+            const methodId = frames[fp++];
+            let x = frames[fp++];
+            const childrenCount = frames[fp++];
+
+            // TODO remove
+            roots[frame] = {
+                x: x,
+                c: childrenCount,
+                m: methodId
+            };
+
+            let methodsMapFirstPos = nextFrames.length;
+            let totalChildren = 0;
+            let prevFp = fp;
+
+            for (let child = 0; child < childrenCount; child++) {
+                let chunkPos = frames[fp++];
+                const chunkEnd = frames[fp++];
+                let storagePos = frames[fp++];
+
+                let methodId = currentHeatmap.blocksData.storage[storagePos];
+                if (methodId === 0) {
+                    chunkPos++;
+                    if (chunkPos === chunkEnd) {
+                        continue;
+                    }
+                    storagePos = currentHeatmap.blocksData.chunksToStorage[chunkPos];
+                    methodId = currentHeatmap.blocksData.storage[storagePos];
+                } else {
+                    storagePos++;
+                }
+                frames[fp - 1] = storagePos;
+
+                if (methodsBuffer[methodId]++ === 0) {
+                    nextFrames[--methodsMapFirstPos] = methodId;
+                }
+
+                totalChildren++;
+            }
+            nextFramesCount += totalChildren;
+
+            if (totalChildren === 0) {
                 continue;
             }
 
-            const methodId = stack[level];
-            nowFrame = frame.get(methodId);
-            if (nowFrame === undefined) {
-                nowFrame = new Map();
-                nowFrame.m = methodId;
-                nowFrame.c = 0;
-                frame.set(methodId, nowFrame);
+            let maxCount = 0;
+            for (let i = methodsMapFirstPos; i < nextFrames.length; i++) {
+                maxCount = Math.max(maxCount, methodsBuffer[nextFrames[i]]);
             }
-            nowFrame.c++;
+            if (maxCount === 0) {
+                // fixme
+                return;
+            }
+            sort(nextFrames, methodsMapFirstPos, nextFrames.length - 1, methodsBuffer, 1 << (31 - Math.clz32(maxCount)));
 
-            frames.push(nowFrame);
-            frames.push(stack);
+            let pos = np;
+            for (let i = methodsMapFirstPos; i < nextFrames.length; i++) {
+                const methodId = nextFrames[i];
+                const count = methodsBuffer[methodId];
+                nextFrames[pos++] = methodId;
+                nextFrames[pos++] = x;
+                nextFrames[pos++] = count;
+                x += count;
+                methodsBuffer[methodId] = pos += methodsBuffer[methodId] * 3;
+            }
+
+            fp = prevFp;
+            for (let child = 0; child < childrenCount; child++) {
+                const chunkPos = frames[fp++];
+                const chunkEnd = frames[fp++];
+                const storagePos = frames[fp++];
+
+                const methodId = currentHeatmap.blocksData.storage[storagePos];
+                if (methodId === 0) {
+                    continue;
+                }
+
+                const childPos = methodsBuffer[methodId];
+
+                nextFrames[childPos] = chunkPos;
+                nextFrames[childPos + 1] = chunkEnd;
+                nextFrames[childPos + 2] = storagePos;
+
+                methodsBuffer[methodId] = chunkPos + 3;
+            }
+
+            for (let i = methodsMapFirstPos; i < nextFrames.length; i++) {
+                methodsBuffer[nextFrames[np++]] = 0;
+                np++;
+                np += nextFrames[np] * 3;
+                np++;
+            }
         }
+
+        nextFrames[0] = nextFramesCount;
+
+        // fixme
+        return roots;
     }
 
     function renderTraces(from, to) {
-        let [frames, roots, levelsCount] = prepareFrames(from, to);
+        let framesBuffer = prepareFrames(from, to);
+        let nextFramesBuffer = new Uint32Array(100500);    // FIXME
+        const methodsBuffer = new Uint32Array(methods.data.length / 12);
+
         levels.length = 0;
-        for (let i = 0; i < levelsCount; i++) {
-            levels.push([]);
-        }
 
         let currentLevel = 0;
         let levelToRedraw = 0;
         let methodInfoOut = {};
 
-        addTask('flame', function () {
-                nextFrames(frames, currentLevel);
+        addTask('flame', () => {
+                const roots = nextFrames(framesBuffer, nextFramesBuffer, methodsBuffer);
+                if (roots.length === 0) {
+                    renderWithMatch(levels.length * 16, levels[0][0], 0);
+                    return false;
+                }
 
-                let level = levels[currentLevel];
-                let nextRoots = [];
+                let level = new Array(roots.length);
+                let i = 0;
                 for (let root of roots) {
-                    let x = root.x;
                     const t = title(root.m, methodInfoOut);
                     let color = getColor(palette[methodInfoOut.type]);
-                    level.push({left: x, width: root.c, color: color, title: t});
-
-                    let nextFrames = [...root.values()];
-
-                    nextFrames.sort((k1, k2) => k2.c - k1.c);
-                    for (let frame of nextFrames) {
-                        frame.x = x;
-                        x += frame.c;
-                        nextRoots.push(frame);
-                    }
+                    level[i++] = {
+                        left: root.x,
+                        width: root.c,
+                        color: color,
+                        title: t
+                    };
                 }
-                level.sort((k1, k2) => k1.left - k2.left);
 
-                roots = nextRoots;
-                currentLevel++;
-                if (currentLevel < levelsCount) {
-                    return true;
+                const tmpBuffer = nextFramesBuffer;
+                nextFramesBuffer = framesBuffer;
+                framesBuffer = tmpBuffer;
+
+                levels.push(level);
+                if (levels.length > 2) {
+                    renderWithMatch(levels.length * 16, levels[0][0], 0);
+                    return false;
                 }
-                renderWithMatch(levelsCount * 16, levels[0][0], 0);
-                return false;
+
+                return true;
             },
-            function () {
+            () => {
                 renderWithMatch(4096, levels[0][0], 0, levelToRedraw);
                 levelToRedraw = currentLevel;
             });
@@ -943,7 +1232,7 @@
 
     function renderDiff(from, to, baseFrom, baseTo) {
         let [frames, roots, levelsCount] = prepareFrames(from, to);
-        let [baseFrames, baseRoots, ] = prepareFrames(baseFrom, baseTo);
+        let [baseFrames, baseRoots,] = prepareFrames(baseFrom, baseTo);
         roots[0].b = baseRoots[0];
 
         levels.length = 0;
@@ -975,16 +1264,16 @@
                     let x = root.x;
 
                     let wasCount = root.b === undefined ? 0 : root.b.c;
-                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount +")";
+                    const t = title(root.m, methodInfoOut) + " (" + root.c + "/" + wasCount + ")";
                     let color;
                     if (wasCount === 0) {
                         color = "#dac571";
                     } else if (wasCount >= root.c) {
                         const ratio = (root.c - wasCount) / minDiff;
-                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 +')';
+                        color = 'rgb(' + (245 - 90 * ratio) + ',' + (250 - 90 * ratio) + ',' + 255 + ')';
                     } else {
                         const ratio = (root.c - wasCount) / maxDiff;
-                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) +')';
+                        color = 'rgb(' + 255 + ',' + (245 - 180 * ratio) + ',' + (240 - 200 * ratio) + ')';
                     }
                     level.push({left: x, width: root.c, color: color, title: t});
 
@@ -1020,20 +1309,25 @@
         const patternDraw = !!pattern;
         const startBlock = currentHeatmap.startBlock();
 
-        const max = currentHeatmap.max();
-        const heatmap = currentHeatmap.heatmap();
+        const max = currentHeatmap.max();   // fixme
+        const counts = currentHeatmap.blocksData.counts;
+        const scale = currentHeatmap.timeSquareScale;
 
         for (let index = from; index <= to; index++) {
             let color;
-            let i = index - startBlock;
-            if (i < 0 || i >= heatmap.length) {
+            const i = index - startBlock;
+            const firstCountsIndex = i * scale;
+            const afterLastCountsIndex = firstCountsIndex + scale;
+            if (afterLastCountsIndex <= 0 || firstCountsIndex >= counts.length) {
                 color = '#ddd';
             } else {
-                let count = heatmap[i];
+                const countBeforeFirstBlock = counts[firstCountsIndex - 1] || 0;
+                const countAtLastBlock = counts[afterLastCountsIndex - 1] || counts[counts.length - 1];
+                const count = countAtLastBlock - countBeforeFirstBlock;
 
-                let useFound = patternDraw && searchExecutedCount > i;
-                let maxValue = useFound ? searchMax : max;
-                let value = useFound ? found[i] : count;
+                let useFound = patternDraw && searchExecutedCount >= afterLastCountsIndex;  // todo incapsulate search
+                let maxValue = useFound ? searchMax : max;  // todo incapsulate search
+                let value = useFound ? found[i] : count;  // todo incapsulate search
                 let ratio = value / (maxValue || 1);
 
                 if (useFound) {
@@ -1050,24 +1344,22 @@
                         color = 'rgb(255,' + value + ',' + value + ')';
                     } else {
                         let value = Math.round(255 - (ratio - 0.8) * 100 / 0.2);
-                        color = 'rgb('+ value + ',0,0)';
+                        color = 'rgb(' + value + ',0,0)';
                     }
                 }
 
             }
             heatC.fillStyle = color;
 
-            let x = Math.floor(index / heatHeight);
-            let y = index % heatHeight;
+            let x = Math.floor(index / currentHeatmap.timeSquareRowsCount);
+            let y = index % currentHeatmap.timeSquareRowsCount;
             heatC.fillRect(x * sq - dx, y * sq + canvasTimeHeight, sq, sq);
         }
 
-        let blocksBetweenMarks = 20;
+        let fromBlock = Math.floor(from / currentHeatmap.squaresBetweenMarks / currentHeatmap.timeSquareRowsCount) - 1;
+        let toBlock = Math.ceil(to / currentHeatmap.squaresBetweenMarks / currentHeatmap.timeSquareRowsCount);
 
-        let fromBlock = Math.floor(from / blocksBetweenMarks / heatHeight) - 1;
-        let toBlock = Math.ceil(to / blocksBetweenMarks / heatHeight);
-
-        let markPixels = blocksBetweenMarks * sq;
+        let markPixels = currentHeatmap.squaresBetweenMarks * sq;
 
         heatC.fillStyle = '#fff';
         heatC.fillRect(
@@ -1084,10 +1376,10 @@
 
         heatC.fillStyle = '#000';
 
-        let groupSize = heatHeight;
-        let oneBlockMs = currentHeatmap.currentTimeBlock();
+        let groupSize = currentHeatmap.timeSquareRowsCount;
+        let oneBlockMs = currentHeatmap.currentTimeSquareMs();
         let oneGroupMs = oneBlockMs * groupSize;
-        let oneMarkMs = oneGroupMs * blocksBetweenMarks;
+        let oneMarkMs = oneGroupMs * currentHeatmap.squaresBetweenMarks;
         for (let markIndex = fromBlock; markIndex <= toBlock; markIndex++) {
             let origin = Math.floor(startMs / oneMarkMs) * oneMarkMs;
             let ms = origin + markIndex * oneMarkMs;
@@ -1109,25 +1401,25 @@
     function redrawHeatSamples(from, to) {
         let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
 
-        from = Math.max(from, heatHeight * Math.floor(dx / sq));
-        to = Math.min(to, heatHeight * Math.ceil((dx + heatCanvas.width) / sq));
+        from = Math.max(from, currentHeatmap.timeSquareRowsCount * Math.floor(dx / sq));
+        to = Math.min(to, currentHeatmap.timeSquareRowsCount * Math.ceil((dx + heatCanvas.width) / sq));
         redrawHeatSamplesImpl(from, to, dx);
     }
 
     function redrawHeatMap() {
-        redrawHeatSamples(0, (1 + currentHeatmap.count() / heatHeight | 0) * heatHeight);
+        redrawHeatSamples(0, (1 + currentHeatmap.count() / currentHeatmap.timeSquareRowsCount | 0) * currentHeatmap.timeSquareRowsCount);
     }
 
     function fillCanvasWithEvents(zoom) {
         searchExecutedCount = 0;
         searchMax = 0;
 
+        // stop search
         addTask('search', function () {
             return false;
-        }, function (){});
+        }, function () {});
 
         currentHeatmap.setZoom(zoom);
-        heatHeight = zoomToHeight[zoom];
 
         const m = devicePixelRatio || 1;
         sqScale = m;
@@ -1138,9 +1430,9 @@
         canvasTimeHeightPx = canvasTimeHeight / m;
 
         const widthPx = canvasScrollPadding + heatCanvasContainer.offsetWidth + canvasScrollPadding;
-        const heightPx = sqPx * heatHeight + canvasTimeHeightPx;
+        const heightPx = sqPx * currentHeatmap.timeSquareRowsCount + canvasTimeHeightPx;
 
-        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / heatHeight)) * sqPx;
+        const heatWidthPx = Math.max(20, Math.ceil(currentHeatmap.count() / currentHeatmap.timeSquareRowsCount)) * sqPx;
         heatCanvasWrapper.style.width = heatWidthPx + 'px';
         if (heatCanvasContainer.offsetWidth > heatWidthPx) {
             heatCanvasContainer.style.overflowX = 'hidden';
@@ -1158,7 +1450,7 @@
         heatC.lineWidth = 1;
         heatC.strokeStyle = '#000';
 
-        document.getElementById('heatmap-height-line').textContent = [' 1 sec : 20 ms ',' 1 min : 1 sec ',' 5 min : 5 sec ',' 1 hr  : 1 min '][currentHeatmap.zoom];
+        document.getElementById('heatmap-height-line').textContent = zoomToText[currentHeatmap.zoom];
         redrawHeatMap();
     }
 
@@ -1175,7 +1467,8 @@
             redrawHeatMap();
             addTask('search', function () {
                 return false;
-            }, function (){});
+            }, function () {
+            });
             return;
         }
         let renderFrom = 0;
@@ -1183,10 +1476,12 @@
         let count = heatmap.length;
         found = new Uint32Array(count);
         let start = currentHeatmap.startBlock();
+
         function renderFunc() {
             redrawHeatSamples(start + renderFrom, start + searchExecutedCount - 1);
             renderFrom = searchExecutedCount;
         }
+
         pattern = r ? RegExp(r) : undefined;
         const matchedMethods = new Set();
         const methodOut = {};
@@ -1240,25 +1535,28 @@
 
     }
 
+    function calculateInitialZoom() {
+        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+
+        let z = 0;
+        for (; z < zoomToGroupSize.length - 1; z++) {
+            if (currentHeatmap.blocksData.counts.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
+                break;
+            }
+        }
+        return z;
+    }
+
     function renderHeatmap() {
         let dx = heatCanvasContainer.scrollLeft - canvasScrollPadding;
         heatCanvas.style.transform = 'translate(' + dx + 'px, 0px)';
 
-        const width = Math.floor(heatCanvasContainer.offsetWidth / sq / (devicePixelRatio || 1));
+        fillCanvasWithEvents(calculateInitialZoom());
 
-        let z = 0;
-        for (; z < zoomToGroupSize.length; z++) {
-            if (currentHeatmap.blocks.length / (zoomToGroupSize[z] * zoomToHeight[z]) < width) {
-                break;
-            }
-        }
-
-        fillCanvasWithEvents(Math.min(z, currentHeatmap.maxZoom - 1));
-
-        renderTraces(0, currentHeatmap.heatmap().length - 1);
+        renderTraces(0, currentHeatmap.blocksData.counts.length - 1);
     }
 
-    heatCanvasContainer.addEventListener('scroll', function() {
+    heatCanvasContainer.addEventListener('scroll', function () {
         let dx = Math.floor((heatCanvasContainer.scrollLeft - canvasScrollPadding) * sqScale);
         let dxPx = dx / sqScale;
         heatCanvas.style.transform = 'translate(' + dxPx + 'px, 0px)';
@@ -1268,12 +1566,12 @@
         } else {
             heatC.drawImage(heatCanvas, prevDx - dx, 0);
             if (prevDx < dx) {
-                let from = heatHeight * Math.floor((prevDx + heatCanvas.width) / sq);
-                let to = heatHeight * Math.ceil((dx + heatCanvas.width) / sq);
+                let from = currentHeatmap.timeSquareRowsCount * Math.floor((prevDx + heatCanvas.width) / sq);
+                let to = currentHeatmap.timeSquareRowsCount * Math.ceil((dx + heatCanvas.width) / sq);
                 redrawHeatSamplesImpl(from, to, dx);
             } else {
-                let from = heatHeight * Math.floor(dx / sq);
-                let to = heatHeight * Math.ceil(prevDx / sq);
+                let from = currentHeatmap.timeSquareRowsCount * Math.floor(dx / sq);
+                let to = currentHeatmap.timeSquareRowsCount * Math.ceil(prevDx / sq);
                 redrawHeatSamplesImpl(from, to, dx);
             }
         }
@@ -1281,7 +1579,7 @@
         cooldownTime = performance.now() + 500;
     });
 
-    document.getElementById('heatmap-height-line').onclick = function() {
+    document.getElementById('heatmap-height-line').onclick = function () {
         fillCanvasWithEvents((currentHeatmap.maxZoom + currentHeatmap.zoom - 1) % (currentHeatmap.maxZoom));
         highlightStart = highlightEnd = heatDiffStart = heatDiffEnd = heatActiveSample1 = heatActiveSample2 = -1;
         for (let suffix of ['Selection', 'Diff', 'Active']) {
@@ -1298,10 +1596,10 @@
         let rightMiddle = document.getElementById('rightMiddle' + suffix);
         let right = document.getElementById('right' + suffix);
 
-        let x1 = Math.floor(start / heatHeight);
-        let y1 = start % heatHeight;
-        let x2 = Math.floor(end / heatHeight);
-        let y2 = end % heatHeight;
+        let x1 = Math.floor(start / currentHeatmap.timeSquareRowsCount);
+        let y1 = start % currentHeatmap.timeSquareRowsCount;
+        let x2 = Math.floor(end / currentHeatmap.timeSquareRowsCount);
+        let y2 = end % currentHeatmap.timeSquareRowsCount;
 
         let veryStartX = x1 * sqPx;
         let veryStartY = y1 * sqPx;
@@ -1326,7 +1624,7 @@
             left.style.left = veryStartX + 'px';
             left.style.top = topPadding + veryStartY + 'px';
             left.style.width = singleElementWidth + 'px';
-            left.style.height = (heatHeight - y1) * sqPx + px + 'px';
+            left.style.height = (currentHeatmap.timeSquareRowsCount - y1) * sqPx + px + 'px';
             left.style.display = 'block';
 
             leftMiddle.style.left = veryStartX + 'px';
@@ -1338,7 +1636,7 @@
             rightMiddle.style.left = veryEndX + 'px';
             rightMiddle.style.top = topPadding + (y2 + 1) * sqPx + 'px';
             rightMiddle.style.width = sqPx + px + 'px';
-            rightMiddle.style.height = (heatHeight - y2 - 1) * sqPx + px + 'px';
+            rightMiddle.style.height = (currentHeatmap.timeSquareRowsCount - y2 - 1) * sqPx + px + 'px';
             rightMiddle.style.display = 'block';
 
             right.style.left = veryEndX + 'px';
@@ -1353,7 +1651,7 @@
                 middle.style.left = veryStartX + sqPx + px + 'px';
                 middle.style.top = topPadding + 'px';
                 middle.style.width = (x2 - x1 - 1) * sqPx - px + 'px';
-                middle.style.height = heatHeight * sqPx + px + 'px';
+                middle.style.height = currentHeatmap.timeSquareRowsCount * sqPx + px + 'px';
                 middle.style.display = 'block';
             }
         }
@@ -1376,7 +1674,7 @@
         const heatmap = currentHeatmap.heatmap();
         if (index >= 0 && index < heatmap.length) {
             const ms = startMs + currentHeatmap.currentTimeBlock() * index;
-            const total =  heatmap[index];
+            const total = heatmap[index];
             const max = currentHeatmap.max();
             heatCanvas.title = new Date(ms).toLocaleTimeString(undefined, timeOptionsShort) + " " + index;  // FIXME
             const totalText = "total: " + total + " (" + Math.floor(total / max * 100) + "%)";
@@ -1445,10 +1743,10 @@
     heatCanvas.onmousemove = function (event) {
         let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
         let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
-        if (y >= heatHeight) {
-            y = heatHeight - 1;
+        if (y >= currentHeatmap.timeSquareRowsCount) {
+            y = currentHeatmap.timeSquareRowsCount - 1;
         }
-        heatLastSample = x * heatHeight + y;
+        heatLastSample = x * currentHeatmap.timeSquareRowsCount + y;
         if ((event.buttons & 1) === 1) {
             callSelectionRedraw(heatLastSample, true, event.ctrlKey);
         } else {
@@ -1463,7 +1761,7 @@
     heatCanvas.onmousedown = function (event) {
         let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
         let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
-        let sample = x * heatHeight + y;
+        let sample = x * currentHeatmap.timeSquareRowsCount + y;
 
         callActiveRedraw(sample, event.shiftKey, event.ctrlKey);
     };
@@ -1471,13 +1769,17 @@
     heatCanvas.onmouseup = function (event) {
         let x = Math.floor((event.offsetX + heatCanvasContainer.scrollLeft - canvasScrollPadding) / sqPx);
         let y = Math.floor(Math.max(0, event.offsetY - canvasTimeHeightPx) / sqPx);
-        let sample = x * heatHeight + y;
+        let sample = x * currentHeatmap.timeSquareRowsCount + y;
 
         callActiveRedraw(sample, true, event.ctrlKey);
     };
 
-/*end if heatmap js*/
-/*frames:*/
-init();
-// FIXME search(/*highlight:*/);
-</script></body></html>
+    /*end if heatmap js*/
+    /*frames:*/
+    performance.mark('beforeInit');
+    init();
+    performance.mark('beforeExit');
+    // FIXME search(/*highlight:*/);
+</script>
+</body>
+</html>

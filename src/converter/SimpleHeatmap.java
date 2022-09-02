@@ -108,7 +108,7 @@ public class SimpleHeatmap extends ResourceProcessor {
         for (Event execution : samples) {
             if (pp * 100 / samples.size() != procent) {
                 procent = pp * 100 / samples.size();
-                System.out.println(procent + "%");
+                System.out.print("Processing samples: " + procent + "%     \r");
             }
             pp++;
 
@@ -159,7 +159,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             stackTraces.put((long)execution.extra() << 32 | execution.stackTraceId, stackTrace);
             block.stacks.add(stackTracesRemap.index(stackTrace));
         }
-
+        System.out.print("Processing samples: done     \n");
 
         System.out.println("Unique: " + stackTracesRemap.size() + "/" + stackTraces.size());
 
@@ -243,15 +243,12 @@ public class SimpleHeatmap extends ResourceProcessor {
         tail = printTill(out, tail, "/*executionsHeatmap:*/");
         int was = out.pos();
         printHeatmap(out, evaluationContext);
-        System.out.println((out.pos() - was) / 1024);
-
-        tail = printTill(out, tail, "/*globalStacks:*/");
-        printGlobalStacks();
+        System.out.println("heatmap " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
 
         tail = printTill(out, tail, "/*methods:*/");
         was = out.pos();
         printMethods(out, evaluationContext);
-        System.out.println((out.pos() - was) / 1024);
+        System.out.println("methods " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
 
         tail = printTill(out, tail, "/*end if heatmap html*/");
         tail = printTill(out, tail, "/*title:*/");
@@ -279,7 +276,7 @@ public class SimpleHeatmap extends ResourceProcessor {
         tail = printTill(out, tail, "/*cpool:*/");
         was = out.pos();
         printConstantPool(out, evaluationContext);
-        System.out.println((out.pos() - was) / 1024);
+        System.out.println("constant pool " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
 
         tail = printTill(out, tail, "/*end if heatmap js*/");
 
@@ -296,49 +293,14 @@ public class SimpleHeatmap extends ResourceProcessor {
     // 60
 
     private void printHeatmap(Output out, EvaluationContext context) {
-        int maxZoom = 3;
-        out.writeVar(maxZoom);
-
-        IndexInt starts = new IndexInt();
-        starts.index(context.methods.size() + 1);
-
-        for (SampleBlock block : context.blocks) {
-            for (int i = 0; i < block.stacks.size; i++) {
-                int stackId = block.stacks.list[i];
-                int[] stack = context.stackTraces[stackId - 1];
-                starts.index(stack[0]);// use ends???
-            }
-        }
-
-        int[] startsOut = new int[starts.size()];
-        starts.orderedKeys(startsOut);
-        out.writeVar(startsOut.length);
-
-        System.out.println("Start method count: " + startsOut.length);
-        for (int method : startsOut) {
-            System.out.println("Start method: " + method);
-            out.writeVar(method);
-        }
-
-        Histogram histogram = new Histogram();
-
-        int was = out.pos();
-        out.writeVar(context.blocks.size());
-        System.out.println("context.blocks.size() " + context.blocks.size());
-        for (SampleBlock block : context.blocks) {
-            out.writeTinyVar(block.stacks.size);
-        }
-        System.out.println("stack sizes " + (out.pos() - was) / 1024);
-
-        int synonymsCount = 32 * 32 * 32;   // 3 6-bits var-int symbols
+        int veryStart = out.pos();
+        int synonymsCount = 10000;
 
         int nextId = synonymsCount;
         LzNode root = new LzNode(nextId++);
         LzNode next = new LzNode(nextId++);
         List<LzNode> allNodes = new ArrayList<>();
         allNodes.add(root);
-
-        IntList list = new IntList();
 
         for (SampleBlock block : context.blocks) {
             for (int i = 0; i < block.stacks.size; i++) {
@@ -350,15 +312,70 @@ public class SimpleHeatmap extends ResourceProcessor {
                     LzNode prev = current;
                     current = current.putIfAbsent(methodId, next);
                     if (current == null) {
+                        next.parent = prev;
                         allNodes.add(next);
-                        prev.count++;
                         current = root;
                         next = new LzNode(nextId++);
+
+                        prev.count++;
+                        context.orderedMethods[methodId - 1].tmp++;
                     }
                 }
-                current.count++;
-                list.add(current.id);
             }
+        }
+
+        Arrays.sort(context.orderedMethods, new Comparator<Method>() {
+            @Override
+            public int compare(Method o1, Method o2) {
+                return Integer.compare(o2.tmp, o1.tmp);
+            }
+        });
+
+        for (int i = 0; i < context.orderedMethods.length; i++) {
+            Method method = context.orderedMethods[i];
+            method.tmp = i + 1; // zero is reserved for no method
+        }
+
+        context.methods.orderedKeys(context.orderedMethods);
+
+        long[] theOnlyChunksCount = new long[nextId];
+
+        for (SampleBlock block : context.blocks) {
+            boolean theOnly = true;
+            for (int i = 0; i < block.stacks.size; i++) {
+                LzNode current = root;
+                int stackId = block.stacks.list[i];
+                int[] stack = context.stackTraces[stackId - 1];
+                for (int j = 0; j < stack.length; j++) {
+                    int methodId = stack[j];
+                    LzNode prev = current;
+                    current = current.get(methodId);
+                    boolean isLast = j == stack.length - 1;
+                    if (current == null || isLast) {
+                        prev.count++;
+                        current = root;
+                        if (theOnly && isLast) {
+                            theOnlyChunksCount[prev.id]++;
+                        }
+                        theOnly = false;
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < theOnlyChunksCount.length; i++) {
+            long count = theOnlyChunksCount[i];
+            theOnlyChunksCount[i] = count > 10 ? ((-count << 32) | i) : 0;
+        }
+        Arrays.sort(theOnlyChunksCount);
+        int frequentlyUsedStacksCount = 0;
+        for (; frequentlyUsedStacksCount < Math.min(1000, theOnlyChunksCount.length); frequentlyUsedStacksCount++) {
+            long encoded = theOnlyChunksCount[frequentlyUsedStacksCount];
+            if (encoded == 0) {
+                break;
+            }
+            int id = (int) encoded;
+            out.writeVar(id);
         }
 
         Collections.sort(allNodes, new Comparator<LzNode>() {
@@ -367,6 +384,84 @@ public class SimpleHeatmap extends ResourceProcessor {
                 return Integer.compare(o2.count, o1.count);
             }
         });
+
+        IndexInt starts = new IndexInt();
+        starts.index(context.methods.size() + 1);
+
+        for (SampleBlock block : context.blocks) {
+            for (int i = 0; i < block.stacks.size; i++) {
+                int stackId = block.stacks.list[i];
+                int[] stack = context.stackTraces[stackId - 1];
+                starts.index(context.orderedMethods[stack[0] - 1].tmp);
+            }
+        }
+
+        int[] startsOut = new int[starts.size()];
+        starts.orderedKeys(startsOut);
+
+        for (int method : startsOut) {
+            out.writeVar(method);
+        }
+
+        Histogram histogram = new Histogram();
+
+        int was = out.pos();
+        {
+            int maxStackSize = 0;
+            for (SampleBlock block : context.blocks) {
+                maxStackSize = Math.max(block.stacks.size, maxStackSize);
+            }
+
+            long[] stackSizes = new long[maxStackSize + 1];
+            for (SampleBlock block : context.blocks) {
+                maxStackSize = Math.max(block.stacks.size, maxStackSize);
+                stackSizes[block.stacks.size]++;
+            }
+            for (int i = 0; i < stackSizes.length; i++) {
+                stackSizes[i] = (-stackSizes[i] << 32) | i;
+            }
+            Arrays.sort(stackSizes);
+
+            out.writeVar(stackSizes.length);
+            System.out.println("stackSizes.length "  + stackSizes.length);
+
+            BitSet allBitSet = new BitSet();
+            for (long stackSizeTerm : stackSizes) {
+                int stackSize = (int) stackSizeTerm;
+                out.writeVar(stackSize);
+
+                BitSet bitSet = new BitSet();
+
+                int j = 0;
+                for (int i = 0; i < context.blocks.size(); i++) {
+                    SampleBlock block = context.blocks.get(i);
+                    if (allBitSet.get(i)) {
+                        continue;
+                    }
+                    if (block.stacks.size == stackSize) {
+                        bitSet.set(j);
+                        allBitSet.set(i);
+                    }
+                    j++;
+                }
+                out.writeVar(bitSet.length());
+                int b = 0;
+                int c = 0;
+                for (int i = 0; i < bitSet.length(); i++) {
+                    b = (b << 1) | (bitSet.get(i) ? 1 : 0);
+                    c++;
+                    if (c == 6) {
+                        out.write6(b);
+                        c = 0;
+                        b = 0;
+                    }
+                }
+                if (c != 0) {
+                    out.write6(b << (6 - c));
+                }
+            }
+        }
+        System.out.println("stack sizes " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
 
         was = out.pos();
         IndexInt synonyms = new IndexInt();
@@ -377,69 +472,105 @@ public class SimpleHeatmap extends ResourceProcessor {
             synonymsDelta = oldSynonymsCount - synonymsCount;
         }
 
-        out.writeVar(synonymsCount);
         System.out.println("synonymsCount " + synonymsCount);
+        System.out.println("before synonyms pos " + (out.pos() - veryStart));
         for (LzNode node : allNodes.subList(0, synonymsCount)) {
             synonyms.index(node.id - synonymsDelta);
             out.writeVar(node.id - synonymsDelta);
         }
-        System.out.println("synonyms " + (out.pos() - was) / 1024);
-
-        was = out.pos();
-        out.writeVar(list.size);
-        System.out.println("tails count " + list.size);
-        for (int i = 0; i < list.size; i++) {
-            int tailId = list.list[i] - synonymsDelta;
-            int index = synonyms.index(tailId, -1);
-            out.writeVar(index == -1 ? tailId : index - 1);
-        }
-        System.out.println("tails " + (out.pos() - was) / 1024);
+        System.out.println("synonyms " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
+        System.out.println("after synonyms pos " + (out.pos() - veryStart));
 
         nextId = synonymsCount;
         root = new LzNode(nextId++);
         next = new LzNode(nextId++);
 
+        System.out.println("before bodies " + (out.pos() - veryStart));
         was = out.pos();
-        int b = 0;
+        int stacksCount = 0;
         for (SampleBlock block : context.blocks) {
-            boolean debug = b < 50;
             for (int i = 0; i < block.stacks.size; i++) {
-                if (debug) {
-                    System.out.println(b + " debug " + i);
-                }
                 LzNode current = root;
                 int stackId = block.stacks.list[i];
                 int[] stack = context.stackTraces[stackId - 1];
                 for (int methodId : stack) {
-                    if (debug) {
-                        System.out.println(b + " MethodId " + methodId);
-                    }
                     int prevId = current.id;
                     current = current.putIfAbsent(methodId, next);
                     if (current == null) {
                         current = root;
                         next = new LzNode(nextId++);
                         int index = synonyms.index(prevId, -1);
-                        out.writeVar(index == -1 ? prevId : index - 1);
-                        out.writeVar(methodId);
-                        if (debug) {
-                            System.out.println(b + " Dump " + (index == -1 ? prevId : index - 1) + " " + methodId);
-                        }
+                        int data = index == -1 ? prevId : index - 1;
+                        out.writeVar(data);
+                        out.writeVar(context.orderedMethods[methodId - 1].tmp);
                     }
                 }
-                if (debug) {
-                    int index = synonyms.index(current.id, -1);
-                    System.out.println(b + " Ends with " + (index == -1 ? current.id : index - 1));
-                    System.out.println();
+                stacksCount++;
+            }
+        }
+        System.out.println("bodies " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
+        System.out.println("after bodies pos " + (out.pos() - veryStart));
+
+        List<LzNode> chunks = new ArrayList<>();
+        was = out.pos();
+        int n = 0;
+        int t = 0;
+        for (SampleBlock block : context.blocks) {
+            for (int i = 0; i < block.stacks.size; i++) {
+                LzNode current = root;
+                int size = 1;
+                int stackId = block.stacks.list[i];
+                int[] stack = context.stackTraces[stackId - 1];
+                boolean w = false;
+                for (int j = 0; j < stack.length; j++) {
+                    int methodId = stack[j];
+                    LzNode prev = current;
+                    current = current.get(methodId);
+                    if (current == null || j == stack.length - 1) {
+                        prev.count = size;
+                        size = 0;
+                        chunks.add(prev);
+                        current = root;
+                        int index = synonyms.index(prev.id, -1);
+                        int data = index == -1 ? prev.id : index - 1;
+                        out.writeVar(data);
+                    }
+                    size++;
                 }
-                b++;
             }
         }
 
-        out.writeVar(0);
-        out.writeVar(context.methods.size() + 1);
-        System.out.println("bodies " + (out.pos() - was) / 1024);
+        System.out.println("chunks count " + chunks.size());
+        System.out.println("bodies2 " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
 
+        Collections.sort(chunks, new Comparator<LzNode>() {
+            @Override
+            public int compare(LzNode o1, LzNode o2) {
+                return Integer.compare(o2.count, o1.count);
+            }
+        });
+
+        int storageSize = 0;
+        for (LzNode node : chunks) {
+            storageSize += node.count;
+            while (node != null) {
+                node.count = 0;
+                node = node.parent;
+            }
+        }
+        System.out.println("storageSize " + storageSize / 1024.0 / 1024.0 + " MB");
+
+        out.write36(frequentlyUsedStacksCount);
+        out.write36(synonymsCount);
+        out.write36(context.blocks.size());
+        out.write36(startsOut.length);
+        out.write36(storageSize);
+        out.write36(chunks.size());
+        out.write36(nextId);
+        out.write36(stacksCount);
+        System.out.println("stacksCount " + stacksCount);
+
+        System.out.println("all data length " + (out.pos() - was) / 1024.0 / 1024.0 + " MB (" + (out.pos() - veryStart) +")");
         histogram.print();
     }
 
@@ -452,13 +583,14 @@ public class SimpleHeatmap extends ResourceProcessor {
     }
 
     private void printMethods(Output out, EvaluationContext evaluationContext) {
-        Method[] methods = new Method[evaluationContext.methods.size()];
-        evaluationContext.methods.orderedKeys(methods);
-
-        compressMethods(out, methods);
-    }
-
-    private void printGlobalStacks() {
+        System.out.println("methods count " + evaluationContext.orderedMethods.length);
+        Arrays.sort(evaluationContext.orderedMethods, new Comparator<Method>() {
+            @Override
+            public int compare(Method o1, Method o2) {
+                return Integer.compare(o1.tmp, o2.tmp);
+            }
+        });
+        compressMethods(out, evaluationContext.orderedMethods);
     }
 
     private static String printTill(Output out, String tail, String till) {
@@ -472,6 +604,8 @@ public class SimpleHeatmap extends ResourceProcessor {
         final int location;
         final byte type;
         final boolean start;
+
+        public int tmp;
 
         Method(int className, int methodName) {
             this(className, methodName, 0, (byte) 3, true);
@@ -513,18 +647,10 @@ public class SimpleHeatmap extends ResourceProcessor {
     private static class LzNode extends Dictionary<LzNode> {
         int id;
         int count;
+        LzNode parent;
 
         private LzNode(int id) {
             this.id = id;
-        }
-
-        public boolean rename(IndexInt synonyms) {
-            int newId = synonyms.shift(id);
-            if (newId != 0) {
-                id = newId;
-                return true;
-            }
-            return false;
         }
     }
 
@@ -534,6 +660,7 @@ public class SimpleHeatmap extends ResourceProcessor {
 
     private static class EvaluationContext {
         final Index<Method> methods;
+        final Method[] orderedMethods;
         final int[][] stackTraces;
         final String[] symbols;
 
@@ -544,12 +671,16 @@ public class SimpleHeatmap extends ResourceProcessor {
             this.methods = methods;
             this.stackTraces = stackTraces;
             this.symbols = symbols;
+
+            orderedMethods = new Method[methods.size()];
+            methods.orderedKeys(orderedMethods);
         }
     }
 
     private interface Output {
-        void writeTinyVar(int v);
         void writeVar(long v);
+
+        void write6(int v);
 
         void write36(long v);
 
@@ -567,8 +698,6 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         private final PrintStream out;
 
-        private int subByte = -1;
-
         private int pos = 0;
 
         public HtmlOut(PrintStream out) {
@@ -577,35 +706,28 @@ public class SimpleHeatmap extends ResourceProcessor {
 
         private void nextByte(int ch) {
             pos++;
-            out.append((char) ch);
-        }
-
-        private void writeByte(int v) {
-            if (subByte != -1) {
-                writeSubByte(0);
+            char c;
+            switch (ch) {
+                case 0:
+                    c = (char)127;
+                    break;
+                case '\r':
+                    c = (char)126;
+                    break;
+                case '&':
+                    c = (char)125;
+                    break;
+                case '<':
+                    c = (char)124;
+                    break;
+                case '>':
+                    c = (char)123;
+                    break;
+                default:
+                    c = (char)ch;
+                    break;
             }
-            nextByte(v + 63); // start from ? (+63) in ascii
-        }
-
-        private void writeSubByte(int v) {
-            if (subByte == -1) {
-                subByte = v;
-            } else {
-                nextByte(((subByte << 3) | v) + 63);
-                subByte = -1;
-            }
-        }
-
-        @Override
-        public void writeTinyVar(int v) {
-            if (v < 0) {
-                throw new IllegalArgumentException(v + "");
-            }
-            while (v > 3) {
-                writeSubByte(( v & 3) | 4);
-                v >>>= 2;
-            }
-            writeSubByte(v);
+            out.append(c);
         }
 
         @Override
@@ -613,11 +735,20 @@ public class SimpleHeatmap extends ResourceProcessor {
             if (v < 0) {
                 throw new IllegalArgumentException(v + "");
             }
-            while (v > 0x1F) {
-                writeByte(((int) v & 0x1F) | 0x20);
-                v >>= 5;
+            while (v >= 60) {
+                int b = 60 + (int) (v % 60);
+                nextByte(b);
+                v /= 60;
             }
-            writeByte((int) v);
+            nextByte((int) v);
+        }
+
+        @Override
+        public void write6(int v) {
+            if ((v & (0xFFFFFFC0)) != 0) {
+                throw new IllegalArgumentException("Value " + v + " is out of bounds");
+            }
+            nextByte(v);
         }
 
         @Override
@@ -626,7 +757,7 @@ public class SimpleHeatmap extends ResourceProcessor {
                 throw new IllegalArgumentException("Value " + v + " is out of bounds");
             }
             for (int i = 0; i < 6; i++) {
-                writeByte((int) (v & 0x3F));
+                nextByte((int) (v & 0x3F));
                 v >>>= 6;
             }
         }
@@ -662,12 +793,13 @@ public class SimpleHeatmap extends ResourceProcessor {
 
 
     private static class Histogram {
+        private static final int COUNT = 1000;
         Map<String, int[]> data = new TreeMap<>();
 
         void add(int value, String name) {
             int[] histogram = data.get(name);
             if (histogram == null) {
-                histogram = new int[1000];
+                histogram = new int[COUNT + 1];
                 data.put(name, histogram);
             }
 
@@ -677,6 +809,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             } else {
                 histogram[value]++;
             }
+            histogram[COUNT]++;
         }
 
         void print() {
@@ -685,16 +818,18 @@ public class SimpleHeatmap extends ResourceProcessor {
                 int[] histogram = kv.getValue();
 
                 int count = 0;
-                for (int i = 0; i < histogram.length; i++) {
+                for (int i = 0; i < histogram.length - 1; i++) {
                     if (histogram[i] != 0) {
                         count = i + 1;
                     }
                 }
                 System.out.println("Histogram " + name + ": ");
                 for (int i = 1; i < count; i++) {
-                    System.out.printf("%4d: %d\n", i - 1, histogram[i]);
+                    System.out.printf("%4d: %d (%.3f)\n", i - 1, histogram[i], histogram[i]/(double)histogram[COUNT]);
                 }
-                System.out.printf(">999: %d\n", histogram[0]);
+                if (histogram[0] != 0) {
+                    System.out.printf(">%d: %d (%.3f)\n", COUNT - 1, histogram[0], histogram[0] / (double) histogram[COUNT]);
+                }
                 System.out.println();
             }
         }
