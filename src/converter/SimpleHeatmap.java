@@ -111,6 +111,9 @@ public class SimpleHeatmap extends ResourceProcessor {
                 System.out.print("Processing samples: " + procent + "%     \r");
             }
             pp++;
+            if (pp > 4) {
+                //break;
+            }
 
             long timeMs = ms(execution.time);
             SampleBlock block = blocks[(int) (timeMs / blockDurationMs)];
@@ -138,6 +141,7 @@ public class SimpleHeatmap extends ResourceProcessor {
 
                 String classNameString = classNameBytes == null ? UNKNOWN_CLASS_NAME : convertClassName(classNameBytes);
                 String methodNameString = methodNameBytes == null ? UNKNOWN_METHOD_NAME : new String(methodNameBytes);
+                //System.out.println(classNameString + ":" + methodNameString);
 
                 int className = symbols.index(classNameString);
                 int methodName = symbols.index(methodNameString);
@@ -294,7 +298,7 @@ public class SimpleHeatmap extends ResourceProcessor {
 
     private void printHeatmap(Output out, EvaluationContext context) {
         int veryStart = out.pos();
-        int synonymsCount = 10000;
+        int synonymsCount = 60 * 60;
 
         int nextId = synonymsCount;
         LzNode root = new LzNode(nextId++);
@@ -302,11 +306,21 @@ public class SimpleHeatmap extends ResourceProcessor {
         List<LzNode> allNodes = new ArrayList<>();
         allNodes.add(root);
 
+        List<LzNode>[] blocksData = new ArrayList[context.stackTraces.length];
+        int stacksCount = 0;
         for (SampleBlock block : context.blocks) {
             for (int i = 0; i < block.stacks.size; i++) {
+                stacksCount++;
                 LzNode current = root;
                 int stackId = block.stacks.list[i];
                 int[] stack = context.stackTraces[stackId - 1];
+
+                List<LzNode> bestSample = blocksData[stackId - 1];
+                if (bestSample == null) {
+                    blocksData[stackId - 1] = bestSample = new ArrayList<>();
+                } else {
+                    bestSample.clear();
+                }
 
                 for (int methodId : stack) {
                     LzNode prev = current;
@@ -319,7 +333,13 @@ public class SimpleHeatmap extends ResourceProcessor {
 
                         prev.count++;
                         context.orderedMethods[methodId - 1].tmp++;
+                        bestSample.add(prev);
                     }
+                }
+                if (current != root) {
+                    bestSample.add(current);
+                } else {
+                    bestSample.add(allNodes.get(allNodes.size() - 1));
                 }
             }
         }
@@ -337,46 +357,6 @@ public class SimpleHeatmap extends ResourceProcessor {
         }
 
         context.methods.orderedKeys(context.orderedMethods);
-
-        long[] theOnlyChunksCount = new long[nextId];
-
-        for (SampleBlock block : context.blocks) {
-            boolean theOnly = true;
-            for (int i = 0; i < block.stacks.size; i++) {
-                LzNode current = root;
-                int stackId = block.stacks.list[i];
-                int[] stack = context.stackTraces[stackId - 1];
-                for (int j = 0; j < stack.length; j++) {
-                    int methodId = stack[j];
-                    LzNode prev = current;
-                    current = current.get(methodId);
-                    boolean isLast = j == stack.length - 1;
-                    if (current == null || isLast) {
-                        prev.count++;
-                        current = root;
-                        if (theOnly && isLast) {
-                            theOnlyChunksCount[prev.id]++;
-                        }
-                        theOnly = false;
-                    }
-                }
-            }
-        }
-
-        for (int i = 0; i < theOnlyChunksCount.length; i++) {
-            long count = theOnlyChunksCount[i];
-            theOnlyChunksCount[i] = count > 10 ? ((-count << 32) | i) : 0;
-        }
-        Arrays.sort(theOnlyChunksCount);
-        int frequentlyUsedStacksCount = 0;
-        for (; frequentlyUsedStacksCount < Math.min(1000, theOnlyChunksCount.length); frequentlyUsedStacksCount++) {
-            long encoded = theOnlyChunksCount[frequentlyUsedStacksCount];
-            if (encoded == 0) {
-                break;
-            }
-            int id = (int) encoded;
-            out.writeVar(id);
-        }
 
         Collections.sort(allNodes, new Comparator<LzNode>() {
             @Override
@@ -484,93 +464,129 @@ public class SimpleHeatmap extends ResourceProcessor {
         nextId = synonymsCount;
         root = new LzNode(nextId++);
         next = new LzNode(nextId++);
+        allNodes.clear();
+        allNodes.add(root);
 
         System.out.println("before bodies " + (out.pos() - veryStart));
         was = out.pos();
-        int stacksCount = 0;
         for (SampleBlock block : context.blocks) {
             for (int i = 0; i < block.stacks.size; i++) {
                 LzNode current = root;
                 int stackId = block.stacks.list[i];
                 int[] stack = context.stackTraces[stackId - 1];
+
+                List<LzNode> bestSample = blocksData[stackId - 1];
+                bestSample.clear();
+
                 for (int methodId : stack) {
-                    int prevId = current.id;
+                    LzNode prev = current;
                     current = current.putIfAbsent(methodId, next);
                     if (current == null) {
                         current = root;
+                        allNodes.add(next);
+                        bestSample.add(next);
+                        next.parent = prev;
                         next = new LzNode(nextId++);
-                        int index = synonyms.index(prevId, -1);
-                        int data = index == -1 ? prevId : index - 1;
+
+                        int index = synonyms.index(prev.id, -1);
+                        int data = index == -1 ? prev.id : index - 1;
                         out.writeVar(data);
-                        out.writeVar(context.orderedMethods[methodId - 1].tmp);
+
+                        int newMethodId = context.orderedMethods[methodId - 1].tmp;
+                        out.writeVar(newMethodId);
                     }
                 }
-                stacksCount++;
+                if (current != root) {
+                    bestSample.add(current);
+                }
             }
         }
         System.out.println("bodies " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
         System.out.println("after bodies pos " + (out.pos() - veryStart));
 
-        List<LzNode> chunks = new ArrayList<>();
-        was = out.pos();
-        int n = 0;
-        int t = 0;
         for (SampleBlock block : context.blocks) {
             for (int i = 0; i < block.stacks.size; i++) {
-                LzNode current = root;
-                int size = 1;
                 int stackId = block.stacks.list[i];
-                int[] stack = context.stackTraces[stackId - 1];
-                boolean w = false;
-                for (int j = 0; j < stack.length; j++) {
-                    int methodId = stack[j];
-                    LzNode prev = current;
-                    current = current.get(methodId);
-                    if (current == null || j == stack.length - 1) {
-                        prev.count = size;
-                        size = 0;
-                        chunks.add(prev);
-                        current = root;
-                        int index = synonyms.index(prev.id, -1);
-                        int data = index == -1 ? prev.id : index - 1;
-                        out.writeVar(data);
-                    }
-                    size++;
+                for (LzNode lzNode : blocksData[stackId - 1]) {
+                    lzNode.count++;
                 }
+                histogram.add(blocksData[stackId - 1].size(), "chunk counts per sample");
             }
         }
 
-        System.out.println("chunks count " + chunks.size());
-        System.out.println("bodies2 " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
-
-        Collections.sort(chunks, new Comparator<LzNode>() {
+        Collections.sort(allNodes, new Comparator<LzNode>() {
             @Override
             public int compare(LzNode o1, LzNode o2) {
                 return Integer.compare(o2.count, o1.count);
             }
         });
 
+        synonyms = new IndexInt();
+        for (LzNode node : allNodes.subList(0, synonymsCount)) {
+            synonyms.index(node.id);
+            out.writeVar(node.id);
+        }
+
+        int chunksCount = 0;
+        was = out.pos();
+        for (SampleBlock block : context.blocks) {
+            for (int i = 0; i < block.stacks.size; i++) {
+                int stackId = block.stacks.list[i];
+                for (LzNode lzNode : blocksData[stackId - 1]) {
+                    int index = synonyms.index(lzNode.id, -1);
+                    int data = index == -1 ? lzNode.id : index - 1;
+
+                    int t = out.pos();
+                    out.writeVar(data);
+                    histogram.add(out.pos() - t, "tail size");
+                    chunksCount++;
+                }
+            }
+        }
+
+
+        System.out.println("bodies2 " + (out.pos() - was) / 1024.0 / 1024.0 + " MB");
+
+        Collection<LzNode> chunks = new LinkedHashSet<>();
+        for (List<LzNode> bestSample : blocksData) {
+            chunks.addAll(bestSample);
+        }
+        System.out.println("chunks count " + chunks.size());
+
+        for (LzNode node : allNodes) {
+            node.count = 0;
+        }
+        for (LzNode node : chunks) {
+            node.calcSize();
+        }
+
+        chunks = new ArrayList<>(chunks);
+        Collections.sort((List)chunks, new Comparator<LzNode>() {
+            @Override
+            public int compare(LzNode o1, LzNode o2) {
+                return Integer.compare(o2.count, o1.count);
+            }
+        });
         int storageSize = 0;
         for (LzNode node : chunks) {
             storageSize += node.count;
-            while (node != null) {
+            while (node != null && node.count != 0) {
                 node.count = 0;
                 node = node.parent;
             }
         }
-        System.out.println("storageSize " + storageSize / 1024.0 / 1024.0 + " MB");
+        System.out.println("storageSize " + storageSize * 4 / 1024.0 / 1024.0 + " MB (" + storageSize + ")");
 
-        out.write36(frequentlyUsedStacksCount);
         out.write36(synonymsCount);
         out.write36(context.blocks.size());
         out.write36(startsOut.length);
         out.write36(storageSize);
-        out.write36(chunks.size());
-        out.write36(nextId);
+        out.write36(chunksCount);
+        out.write36(nextId - synonymsCount - 1);
         out.write36(stacksCount);
         System.out.println("stacksCount " + stacksCount);
 
-        System.out.println("all data length " + (out.pos() - was) / 1024.0 / 1024.0 + " MB (" + (out.pos() - veryStart) +")");
+        System.out.println("all data length " + (out.pos() - veryStart) / 1024.0 / 1024.0 + " MB (" + (out.pos() - veryStart) +")");
         histogram.print();
     }
 
@@ -645,12 +661,27 @@ public class SimpleHeatmap extends ResourceProcessor {
     }
 
     private static class LzNode extends Dictionary<LzNode> {
+        String method;
         int id;
         int count;
         LzNode parent;
 
         private LzNode(int id) {
             this.id = id;
+        }
+
+        public void print() {
+            if (parent != null) {
+                parent.print();
+            }
+            System.out.println(method);
+        }
+
+        public int calcSize() {
+            if (count == 0) {
+                count = parent == null ? 0 : parent.calcSize() + 1;
+            }
+            return count;
         }
     }
 
@@ -804,7 +835,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             }
 
             value = value + 1;
-            if (value >= histogram.length) {
+            if (value >= histogram.length || value < 0) {
                 histogram[0]++;
             } else {
                 histogram[value]++;
