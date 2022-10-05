@@ -1,6 +1,7 @@
 import one.jfr.*;
 import one.jfr.Dictionary;
 import one.jfr.event.AllocationSample;
+import one.jfr.event.ContendedLock;
 import one.jfr.event.Event;
 import one.jfr.event.ExecutionSample;
 
@@ -9,6 +10,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class SimpleHeatmap extends ResourceProcessor {
+
+    public static enum Type {
+        CPU,
+        ALLOC,
+        LOCK
+    }
 
     private static final int UNKNOWN_ID = -1;
     private static final String UNKNOWN_METHOD_NAME = "<UnknownMethod>";
@@ -20,7 +27,7 @@ public class SimpleHeatmap extends ResourceProcessor {
     private final List<Event> samples = new ArrayList<>();
 
     private final String title;
-    private final boolean alloc;
+    private final Type type;
 
     private Dictionary<StackTrace> stacks;
     private Dictionary<MethodRef> methodRefs;
@@ -31,20 +38,28 @@ public class SimpleHeatmap extends ResourceProcessor {
     private long startTicks;
     private long ticksPerSec;
 
-    public SimpleHeatmap(String title, boolean alloc) {
+    public SimpleHeatmap(String title, Type type) {
         this.title = title;
-        this.alloc = alloc;
+        this.type = type;
     }
 
     public void addEvent(Event event) {
-        if (alloc) {
-            if (event instanceof AllocationSample) {
-                samples.add(event);
-            }
-        } else {
-            if (event instanceof ExecutionSample) {
-                samples.add(event);
-            }
+        switch (type) {
+            case CPU:
+                if (event instanceof ExecutionSample) {
+                    samples.add(event);
+                }
+                break;
+            case ALLOC:
+                if (event instanceof AllocationSample) {
+                    samples.add(event);
+                }
+                break;
+            case LOCK:
+                if (event instanceof ContendedLock) {
+                    samples.add(event);
+                }
+                break;
         }
     }
 
@@ -123,7 +138,7 @@ public class SimpleHeatmap extends ResourceProcessor {
             }
 
             StackTrace originalTrace = stacks.getOrDefault(execution.stackTraceId, UNKNOWN_STACK);
-            stackTrace = new int[originalTrace.methods.length + (alloc ? 1 : 0)];
+            stackTrace = new int[originalTrace.methods.length + (type == Type.CPU ? 0 : 1)];
 
             for (int i = originalTrace.methods.length - 1; i >= 0; i--) {
                 long methodId = originalTrace.methods[i];
@@ -146,13 +161,16 @@ public class SimpleHeatmap extends ResourceProcessor {
                 Method method = new Method(className, methodName, location, type, index == 0);
                 stackTrace[index] = methodIndex.index(method);
             }
-            if (alloc) {
+            if (type != Type.CPU) {
                 ClassRef classRef = classRefs.getOrDefault(execution.extra(), UNKNOWN_CLASS_REF);
                 byte[] classNameBytes = this.symbols.get(classRef.name);
                 String classNameString = classNameBytes == null ? UNKNOWN_CLASS_NAME : convertClassName(classNameBytes);
                 int className = symbols.index(classNameString);
                 int methodName = symbols.index("");
-                byte type = ((AllocationSample)execution).tlabSize == 0 ? (byte) 3 : (byte) 2;
+                byte type = 2;
+                if (this.type == Type.ALLOC) {
+                    type = ((AllocationSample)execution).tlabSize == 0 ? (byte) 3 : (byte) 2;
+                }
                 stackTrace[originalTrace.methods.length] = methodIndex.index(new Method(className, methodName, 0, type, false));
             }
 

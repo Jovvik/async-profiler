@@ -53,11 +53,13 @@ public class jfr2heat {
 
         String input = null;
         String output = null;
-        boolean alloc = false;
+        SimpleHeatmap.Type type = SimpleHeatmap.Type.CPU;
 
         for (String arg : args) {
             if (arg.equals("--alloc")) {
-                alloc = true;
+                type = SimpleHeatmap.Type.ALLOC;
+            } else if (arg.equals("--lock")) {
+                type = SimpleHeatmap.Type.LOCK;
             } else if (input == null) {
                 input = arg;
             } else {
@@ -65,7 +67,7 @@ public class jfr2heat {
             }
         }
 
-        SimpleHeatmap fg = new SimpleHeatmap("Heatmap, CPU", alloc);
+        SimpleHeatmap fg = new SimpleHeatmap("Heatmap, " + type, type);
         try (JfrReader jfr = new JfrReader(input)) {
             new jfr2heat(jfr).convert(fg);
         }
